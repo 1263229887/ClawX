@@ -38,6 +38,8 @@ export interface ProviderConfig {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Whether this is a built-in default provider */
+  isBuiltIn?: boolean;
 }
 
 // ==================== API Key Storage ====================
@@ -260,5 +262,47 @@ export async function getAllProvidersWithKeyInfo(): Promise<
   }
 
   return results;
+}
+
+// ==================== Default Provider Initialization ====================
+
+/** Default OpenRouter provider configuration */
+const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
+  id: 'openrouter-default',
+  type: 'openrouter',
+  name: 'OpenRouter (Default)',
+  baseUrl: 'https://openrouter.ai/api/v1',
+  model: 'stepfun/step-3.5-flash:free',
+  enabled: true,
+  isBuiltIn: true,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
+
+/** Default API key for built-in provider */
+const DEFAULT_PROVIDER_API_KEY = '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';
+
+/**
+ * Initialize default provider on first launch
+ * Creates the built-in OpenRouter provider if no providers exist
+ */
+export async function initializeDefaultProvider(): Promise<void> {
+  const providers = await getAllProviders();
+
+  // Only initialize if no providers exist
+  if (providers.length === 0) {
+    console.log('[Provider] First launch detected, initializing default provider');
+
+    // Save the default provider config
+    await saveProvider(DEFAULT_PROVIDER_CONFIG);
+
+    // Store the API key
+    await storeApiKey(DEFAULT_PROVIDER_CONFIG.id, DEFAULT_PROVIDER_API_KEY);
+
+    // Set as default
+    await setDefaultProvider(DEFAULT_PROVIDER_CONFIG.id);
+
+    console.log('[Provider] Default provider initialized:', DEFAULT_PROVIDER_CONFIG.id);
+  }
 }
 

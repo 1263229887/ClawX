@@ -28,6 +28,8 @@ export interface ProviderConfig {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Whether this is a built-in default provider */
+  isBuiltIn?: boolean;
 }
 
 export interface ProviderWithKeyInfo extends ProviderConfig {
@@ -92,3 +94,19 @@ export const SETUP_PROVIDERS = PROVIDER_TYPE_INFO;
 export function getProviderTypeInfo(type: ProviderType): ProviderTypeInfo | undefined {
   return PROVIDER_TYPE_INFO.find((t) => t.id === type);
 }
+
+// ==================== Default Built-in Provider ====================
+
+/** Default OpenRouter provider configuration (built-in) */
+export const DEFAULT_PROVIDER_CONFIG = {
+  id: 'openrouter-default',
+  type: 'openrouter' as const,
+  name: 'OpenRouter (Default)',
+  baseUrl: 'https://openrouter.ai/api/v1',
+  model: 'stepfun/step-3.5-flash:free',
+  enabled: true,
+  isBuiltIn: true,
+};
+
+/** Default API key for built-in provider */
+export const DEFAULT_PROVIDER_API_KEY = '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';

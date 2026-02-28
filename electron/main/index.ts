@@ -16,6 +16,7 @@ import { warmupNetworkOptimization } from '../utils/uv-env';
 import { ClawHubService } from '../gateway/clawhub';
 import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
 import { isQuitting, setQuitting } from './app-state';
+import { initializeDefaultProvider } from '../utils/secure-storage';
 
 // Disable GPU acceleration for better compatibility
 app.disableHardwareAcceleration();
@@ -156,6 +157,9 @@ async function initialize(): Promise<void> {
 
   // Register update handlers
   registerUpdateHandlers(appUpdater, mainWindow);
+
+  // Initialize default provider on first launch
+  await initializeDefaultProvider();
 
   // Note: Auto-check for updates is driven by the renderer (update store init)
   // so it respects the user's "Auto-check for updates" setting.

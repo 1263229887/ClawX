@@ -131,6 +131,11 @@ const electronAPI = {
         'openclaw:getSkillsDir',
         'openclaw:getCliCommand',
         'openclaw:installCliMac',
+        // Auth
+        'auth:login',
+        'auth:logout',
+        'auth:check',
+        'auth:saveToken',
       ];
 
       if (validChannels.includes(channel)) {
@@ -250,6 +255,13 @@ const electronAPI = {
    * Check if running in development
    */
   isDev: process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL,
+
+  /**
+   * Environment variables for renderer
+   */
+  env: {
+    DANA_API_BASE_URL: process.env.DANA_API_BASE_URL,
+  },
 };
 
 // Expose the API to the renderer process

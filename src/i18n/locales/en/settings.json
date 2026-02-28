@@ -1,6 +1,6 @@
 {
   "title": "Settings",
-  "subtitle": "Configure your ClawX experience",
+  "subtitle": "Configure your DanaClaw experience",
   "appearance": {
     "title": "Appearance",
     "description": "Customize the look and feel",
@@ -43,6 +43,7 @@
       "editKey": "Edit API key",
       "delete": "Delete provider"
     },
+    "builtIn": "Built-in",
     "toast": {
       "added": "Provider added successfully",
       "failedAdd": "Failed to add provider",
@@ -76,14 +77,14 @@
   },
   "gateway": {
     "title": "Gateway",
-    "description": "OpenClaw Gateway settings",
+    "description": "DanaClaw Gateway settings",
     "status": "Status",
     "port": "Port",
     "logs": "Logs",
     "appLogs": "Application Logs",
     "openFolder": "Open Folder",
     "autoStart": "Auto-start Gateway",
-    "autoStartDesc": "Start Gateway when ClawX launches"
+    "autoStartDesc": "Start Gateway when DanaClaw launches"
   },
   "updates": {
     "title": "Updates",
@@ -146,7 +147,7 @@
   },
   "about": {
     "title": "About",
-    "appName": "ClawX",
+    "appName": "DanaClaw",
     "tagline": "Graphical AI Assistant",
     "basedOn": "Based on OpenClaw",
     "version": "Version {{version}}",

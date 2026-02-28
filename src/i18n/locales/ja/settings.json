@@ -1,6 +1,6 @@
 {
   "title": "設定",
-  "subtitle": "ClawX の体験をカスタマイズ",
+  "subtitle": "DanaClaw の体験をカスタマイズ",
   "appearance": {
     "title": "外観",
     "description": "外観とスタイルをカスタマイズ",
@@ -43,6 +43,7 @@
       "editKey": "API キーを編集",
       "delete": "プロバイダーを削除"
     },
+    "builtIn": "ビルトイン",
     "toast": {
       "added": "プロバイダーが正常に追加されました",
       "failedAdd": "プロバイダーの追加に失敗しました",
@@ -76,14 +77,14 @@
   },
   "gateway": {
     "title": "ゲートウェイ",
-    "description": "OpenClaw ゲートウェイ設定",
+    "description": "DanaClaw ゲートウェイ設定",
     "status": "ステータス",
     "port": "ポート",
     "logs": "ログ",
     "appLogs": "アプリケーションログ",
     "openFolder": "フォルダーを開く",
     "autoStart": "ゲートウェイ自動起動",
-    "autoStartDesc": "ClawX 起動時にゲートウェイを自動起動"
+    "autoStartDesc": "DanaClaw 起動時にゲートウェイを自動起動"
   },
   "updates": {
     "title": "アップデート",
@@ -146,7 +147,7 @@
   },
   "about": {
     "title": "バージョン情報",
-    "appName": "ClawX",
+    "appName": "DanaClaw",
     "tagline": "グラフィカル AI アシスタント",
     "basedOn": "OpenClaw ベース",
     "version": "バージョン {{version}}",

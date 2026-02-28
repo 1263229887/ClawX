@@ -292,6 +292,11 @@ function ProviderCard({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold">{provider.name}</span>
+                {provider.isBuiltIn && (
+                  <Badge variant="outline" className="text-xs text-blue-500 border-blue-500/50">
+                    {t('aiProviders.builtIn')}
+                  </Badge>
+                )}
               </div>
               <span className="text-xs text-muted-foreground capitalize">{provider.type}</span>
             </div>

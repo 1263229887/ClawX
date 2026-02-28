@@ -56,6 +56,7 @@ import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
+import { saveAuthData, getAuthData, clearAuthData, isLoggedIn } from '../utils/auth-store';
 
 /**
  * For custom/ollama providers, derive a unique key for OpenClaw config files
@@ -130,6 +131,9 @@ export function registerIpcHandlers(
 
   // System notification handlers
   registerNotificationHandlers();
+
+  // Auth handlers
+  registerAuthHandlers();
 }
 
 /**
@@ -2037,6 +2041,154 @@ function registerNotificationHandlers(): void {
       return { success: true };
     } catch (error) {
       logger.error('Failed to show notification:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+}
+
+/**
+ * Auth handlers
+ * User authentication with persistent login
+ */
+function registerAuthHandlers(): void {
+  // Get Dana API base URL from environment
+  // Development/Test: http://192.168.80.8
+  // Production: https://mail.danaai.net
+  const getApiBaseUrl = () => {
+    return process.env.DANA_API_BASE_URL || 'https://mail.danaai.net';
+  };
+
+  // Login - validate credentials and save auth state
+  ipcMain.handle('auth:login', async (_, username: string, password: string) => {
+    try {
+      logger.info('[auth:login] Attempting login for user:', username);
+
+      const baseUrl = getApiBaseUrl();
+      const loginUrl = `${baseUrl}/auth/login/form`;
+      
+      // Build form data: name, pwd, source=pc
+      const formData = new URLSearchParams();
+      formData.append('name', username);
+      formData.append('pwd', password);
+      formData.append('source', 'pc');
+
+      logger.info('[auth:login] Calling login API:', loginUrl);
+      logger.info('[auth:login] Request body:', formData.toString());
+      
+      const response = await fetch(loginUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString(),
+      });
+
+      const responseText = await response.text();
+      logger.info('[auth:login] API response status:', response.status);
+      logger.info('[auth:login] API response body:', responseText);
+      
+      // Parse response - token handling待定，等看到实际返回再调整
+      let result: Record<string, unknown>;
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        logger.error('[auth:login] Failed to parse response as JSON');
+        return {
+          success: false,
+          error: 'Invalid response format',
+        };
+      }
+
+      // TODO: Token 处理待定，先返回原始响应供调试
+      logger.info('[auth:login] Parsed result:', JSON.stringify(result, null, 2));
+
+      // 根据 API 返回的 code 字段判断：code=200 为成功，其他为失败
+      const code = result.code as number | undefined;
+      if (response.ok && (code === 200 || code === 0)) {
+        // Token 处理待定 - 等用户提供成功响应后再调整
+        const token = 'pending-token-handling';
+        await saveAuthData(token, username);
+
+        logger.info('[auth:login] Login successful for user:', username);
+        return {
+          success: true,
+          user: { username },
+          rawResponse: result, // 返回原始响应供调试
+        };
+      } else {
+        const errorMsg = (result.message || result.error || result.msg || 'Login failed') as string;
+        logger.error('[auth:login] Login failed:', errorMsg);
+        return {
+          success: false,
+          error: errorMsg,
+        };
+      }
+    } catch (error) {
+      logger.error('[auth:login] Login request failed:', error);
+      return {
+        success: false,
+        error: String(error),
+      };
+    }
+  });
+
+  // Logout - clear auth state
+  ipcMain.handle('auth:logout', async () => {
+    try {
+      logger.info('[auth:logout] Logging out user');
+      await clearAuthData();
+      return { success: true };
+    } catch (error) {
+      logger.error('[auth:logout] Logout failed:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Check auth - verify if user is logged in
+  ipcMain.handle('auth:check', async () => {
+    try {
+      const loggedIn = await isLoggedIn();
+      const authData = await getAuthData();
+      logger.info('[auth:check] Checking auth state:', { 
+        loggedIn, 
+        hasToken: !!authData.token, 
+        userName: authData.userInfo?.userName 
+      });
+      
+      if (loggedIn && authData.userInfo) {
+        return {
+          isLoggedIn: true,
+          user: { 
+            username: authData.userInfo.userName,
+            realname: authData.userInfo.realname,
+          },
+        };
+      }
+      return { isLoggedIn: false };
+    } catch (error) {
+      logger.error('[auth:check] Auth check failed:', error);
+      return { isLoggedIn: false };
+    }
+  });
+
+  // Save auth data - called from renderer after successful login
+  ipcMain.handle('auth:saveToken', async (_, data: {
+    token: string;
+    userInfo: Record<string, unknown>;
+    refreshToken: { value: string; expiration: number };
+    expiresAt: number;
+  }) => {
+    try {
+      logger.info('[auth:saveToken] Saving auth data for user:', data.userInfo?.userName);
+      await saveAuthData(
+        data.token,
+        data.userInfo as Parameters<typeof saveAuthData>[1],
+        data.refreshToken,
+        data.expiresAt
+      );
+      return { success: true };
+    } catch (error) {
+      logger.error('[auth:saveToken] Failed to save auth data:', error);
       return { success: false, error: String(error) };
     }
   });

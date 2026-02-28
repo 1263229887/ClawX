@@ -10,6 +10,7 @@ import enChannels from './locales/en/channels.json';
 import enSkills from './locales/en/skills.json';
 import enCron from './locales/en/cron.json';
 import enSetup from './locales/en/setup.json';
+import enAuth from './locales/en/auth.json';
 
 // ZH
 import zhCommon from './locales/zh/common.json';
@@ -20,6 +21,7 @@ import zhChannels from './locales/zh/channels.json';
 import zhSkills from './locales/zh/skills.json';
 import zhCron from './locales/zh/cron.json';
 import zhSetup from './locales/zh/setup.json';
+import zhAuth from './locales/zh/auth.json';
 
 // JA
 import jaCommon from './locales/ja/common.json';
@@ -30,6 +32,7 @@ import jaChannels from './locales/ja/channels.json';
 import jaSkills from './locales/ja/skills.json';
 import jaCron from './locales/ja/cron.json';
 import jaSetup from './locales/ja/setup.json';
+import jaAuth from './locales/ja/auth.json';
 
 export const SUPPORTED_LANGUAGES = [
     { code: 'en', label: 'English' },
@@ -49,6 +52,7 @@ const resources = {
         skills: enSkills,
         cron: enCron,
         setup: enSetup,
+        auth: enAuth,
     },
     zh: {
         common: zhCommon,
@@ -59,6 +63,7 @@ const resources = {
         skills: zhSkills,
         cron: zhCron,
         setup: zhSetup,
+        auth: zhAuth,
     },
     ja: {
         common: jaCommon,
@@ -69,6 +74,7 @@ const resources = {
         skills: jaSkills,
         cron: jaCron,
         setup: jaSetup,
+        auth: jaAuth,
     },
 };
 
@@ -79,7 +85,7 @@ i18n
         lng: 'en', // will be overridden by settings store
         fallbackLng: 'en',
         defaultNS: 'common',
-        ns: ['common', 'settings', 'dashboard', 'chat', 'channels', 'skills', 'cron', 'setup'],
+        ns: ['common', 'settings', 'dashboard', 'chat', 'channels', 'skills', 'cron', 'setup', 'auth'],
         interpolation: {
             escapeValue: false, // React already escapes
         },

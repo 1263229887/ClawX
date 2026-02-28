@@ -19,6 +19,9 @@ import { Setup } from './pages/Setup';
 import TaskLogPage from './pages/TaskLog';
 import { useSettingsStore } from './stores/settings';
 import { useGatewayStore } from './stores/gateway';
+import { useAuthStore } from './stores/auth';
+import { LoginModal } from './components/auth/LoginModal';
+import { Loader2 } from 'lucide-react';
 
 
 /**
@@ -93,6 +96,14 @@ function App() {
   const setupComplete = useSettingsStore((state) => state.setupComplete);
   const initGateway = useGatewayStore((state) => state.init);
 
+  // Auth state
+  const { isLoggedIn, loading: authLoading, checkAuth } = useAuthStore();
+
+  // Check auth on mount
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
   // Sync i18n language with persisted settings on mount
   useEffect(() => {
     if (language && language !== i18n.language) {
@@ -145,6 +156,19 @@ function App() {
     }
   }, [theme]);
 
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // Show login modal if not logged in and setup is complete
+  // During setup, we don't require login yet
+  const showLoginModal = !isLoggedIn && setupComplete;
+
   return (
     <ErrorBoundary>
       <TooltipProvider delayDuration={300}>
@@ -166,11 +190,15 @@ function App() {
           </Route>
         </Routes>
 
-        {/* Global toast notifications */}
+        {/* Login modal - shown when not logged in and setup is complete */}
+        {showLoginModal && <LoginModal />}
+
+        {/* Global toast notifications - z-index 高于 LoginModal(z-50) */}
         <Toaster
           position="bottom-right"
           richColors
           closeButton
+          style={{ zIndex: 9999 }}
         />
       </TooltipProvider>
     </ErrorBoundary>

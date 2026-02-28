@@ -1,6 +1,6 @@
 {
   "title": "设置",
-  "subtitle": "配置您的 ClawX 体验",
+  "subtitle": "配置您的 DanaClaw 体验",
   "appearance": {
     "title": "外观",
     "description": "自定义外观和风格",
@@ -43,6 +43,7 @@
       "editKey": "编辑 API 密钥",
       "delete": "删除提供商"
     },
+    "builtIn": "内置",
     "toast": {
       "added": "提供商添加成功",
       "failedAdd": "添加提供商失败",
@@ -76,14 +77,14 @@
   },
   "gateway": {
     "title": "网关",
-    "description": "OpenClaw 网关设置",
+    "description": "DanaClaw 网关设置",
     "status": "状态",
     "port": "端口",
     "logs": "日志",
     "appLogs": "应用日志",
     "openFolder": "打开文件夹",
     "autoStart": "自动启动网关",
-    "autoStartDesc": "ClawX 启动时自动启动网关"
+    "autoStartDesc": "DanaClaw 启动时自动启动网关"
   },
   "updates": {
     "title": "更新",
@@ -146,7 +147,7 @@
   },
   "about": {
     "title": "关于",
-    "appName": "ClawX",
+    "appName": "DanaClaw",
     "tagline": "图形化 AI 助手",
     "basedOn": "基于 OpenClaw",
     "version": "版本 {{version}}",
