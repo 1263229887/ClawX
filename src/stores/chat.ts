@@ -94,6 +94,8 @@ interface ChatState {
   loadSessions: () => Promise<void>;
   switchSession: (key: string) => void;
   newSession: () => void;
+  deleteSession: (key: string) => Promise<void>;
+  deleteAllSessions: () => Promise<void>;
   loadHistory: (quiet?: boolean) => Promise<void>;
   sendMessage: (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => Promise<void>;
   abortRun: () => Promise<void>;
@@ -141,6 +143,30 @@ function clearHistoryPoll(): void {
 
 const DEFAULT_CANONICAL_PREFIX = 'agent:main';
 const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
+
+// ── Deleted sessions tracking ─────────────────────────────────────
+// Track sessions that have been deleted by the user to prevent them from
+// reappearing when loadSessions is called again (e.g., when navigating back to chat)
+const DELETED_SESSIONS_KEY = 'clawx:deleted-sessions';
+
+function loadDeletedSessions(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_SESSIONS_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw) as string[];
+      return new Set(arr);
+    }
+  } catch { /* ignore parse errors */ }
+  return new Set();
+}
+
+function saveDeletedSessions(deleted: Set<string>): void {
+  try {
+    localStorage.setItem(DELETED_SESSIONS_KEY, JSON.stringify(Array.from(deleted)));
+  } catch { /* ignore quota errors */ }
+}
+
+const _deletedSessions = loadDeletedSessions();
 
 // ── Local image cache ─────────────────────────────────────────
 // The Gateway doesn't store image attachments in session content blocks,
@@ -935,7 +961,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           displayName: s.displayName ? String(s.displayName) : undefined,
           thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
           model: s.model ? String(s.model) : undefined,
-        })).filter((s: ChatSession) => s.key);
+        })).filter((s: ChatSession) => s.key && !_deletedSessions.has(s.key)); // Filter out deleted sessions
 
         const canonicalBySuffix = new Map<string, string>();
         for (const session of sessions) {
@@ -1030,6 +1056,122 @@ export const useChatStore = create<ChatState>((set, get) => ({
       lastUserMessageAt: null,
       pendingToolImages: [],
     }));
+  },
+
+  // ── Delete session ──
+
+  deleteSession: async (key: string) => {
+    try {
+      // Prevent deleting the default session if it's the only one left
+      const { sessions, currentSessionKey } = get();
+
+      // Add to deleted sessions list
+      _deletedSessions.add(key);
+      saveDeletedSessions(_deletedSessions);
+
+      // Call sessions.reset to archive the session
+      await window.electron.ipcRenderer.invoke(
+        'gateway:rpc',
+        'sessions.reset',
+        { sessionKey: key }
+      );
+
+      // If this is the last session, clear state and create a new one
+      if (sessions.length <= 1) {
+        set({
+          sessions: [],
+          currentSessionKey: '',
+          messages: [],
+          streamingText: '',
+          streamingMessage: null,
+          streamingTools: [],
+          activeRunId: null,
+          error: null,
+          pendingFinal: false,
+          lastUserMessageAt: null,
+          pendingToolImages: [],
+        });
+
+        // Create new session after clearing
+        await get().newSession();
+        return;
+      }
+
+      const updatedSessions = sessions.filter((s) => s.key !== key);
+
+      // If deleting current session, switch to another one
+      if (currentSessionKey === key) {
+        const nextSession = updatedSessions[0].key;
+
+        set({
+          sessions: updatedSessions,
+          currentSessionKey: nextSession,
+          messages: [],
+          streamingText: '',
+          streamingMessage: null,
+          streamingTools: [],
+          activeRunId: null,
+          error: null,
+          pendingFinal: false,
+          lastUserMessageAt: null,
+          pendingToolImages: [],
+        });
+
+        // Load history for the new session
+        get().loadHistory();
+      } else {
+        set({ sessions: updatedSessions });
+      }
+
+      // Don't reload sessions from Gateway to avoid bringing back archived sessions
+    } catch (err) {
+      console.error('Failed to delete session:', err);
+    }
+  },
+
+  // ── Delete all sessions ──
+
+  deleteAllSessions: async () => {
+    try {
+      const { sessions } = get();
+
+      // Add all sessions to deleted list (including default session)
+      for (const session of sessions) {
+        _deletedSessions.add(session.key);
+      }
+      saveDeletedSessions(_deletedSessions);
+
+      // Delete all sessions (including default)
+      for (const session of sessions) {
+        await window.electron.ipcRenderer.invoke(
+          'gateway:rpc',
+          'sessions.reset',
+          { sessionKey: session.key }
+        );
+      }
+
+      // Clear local session list
+      set({
+        sessions: [],
+        currentSessionKey: '',
+        messages: [],
+        streamingText: '',
+        streamingMessage: null,
+        streamingTools: [],
+        activeRunId: null,
+        error: null,
+        pendingFinal: false,
+        lastUserMessageAt: null,
+        pendingToolImages: [],
+      });
+
+      // Create a new session automatically
+      get().newSession();
+
+      // Don't reload sessions from Gateway to avoid bringing back archived sessions
+    } catch (err) {
+      console.error('Failed to delete all sessions:', err);
+    }
   },
 
   // ── Load chat history ──

@@ -65,7 +65,7 @@ function createWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 600,
     icon: getAppIcon(),
-    title: 'Dana Claw',
+    title: 'DanaClaw',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
@@ -106,11 +106,11 @@ function createWindow(): BrowserWindow {
  */
 async function initialize(): Promise<void> {
   // Set application display name (keeps package.json name for userData path)
-  app.setName('Dana Claw');
+  app.setName('DanaClaw');
   
   // Initialize logger first
   logger.init();
-  logger.info('=== Dana Claw Application Starting ===');
+  logger.info('=== DanaClaw Application Starting ===');
   logger.debug(
     `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}`
   );

@@ -55,6 +55,10 @@ export default function TaskLogPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    document.title = 'DanaClaw - Task Log';
+  }, []);
+
   // Handle incoming events
   const handleEvent = useCallback((event: TaskLogEvent) => {
     setEntries((prev) => {

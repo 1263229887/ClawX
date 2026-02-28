@@ -98,7 +98,7 @@ export function Chat() {
   return (
     <div className="flex flex-col -m-6" style={{ height: 'calc(100vh - 2.5rem)' }}>
       {/* Toolbar */}
-      <div className="flex shrink-0 items-center justify-end px-4 py-2">
+      <div className="flex shrink-0 items-center justify-center px-4 py-2">
         <ChatToolbar />
       </div>
 

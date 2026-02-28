@@ -21,6 +21,31 @@ interface JobInfo {
 }
 const jobInfoCache = new Map<string, JobInfo>();
 
+// Gate task-log events strictly to cron-triggered runs.
+// flow: cron(action=started, jobId) -> agent(lifecycle start, runId, sessionKey) -> chat:message(runId)
+const recentCronStarts = new Map<string, number>(); // jobId -> timestamp
+const activeCronRuns = new Map<string, string>();   // runId -> jobId
+const CRON_START_WINDOW_MS = 60_000;
+
+function pruneCronState(now = Date.now()): void {
+  for (const [jobId, startedAt] of recentCronStarts.entries()) {
+    if (now - startedAt > CRON_START_WINDOW_MS) {
+      recentCronStarts.delete(jobId);
+    }
+  }
+}
+
+function markCronStarted(jobId: string): void {
+  pruneCronState();
+  recentCronStarts.set(jobId, Date.now());
+}
+
+function hasRecentCronStart(jobId: string): boolean {
+  pruneCronState();
+  const startedAt = recentCronStarts.get(jobId);
+  return typeof startedAt === 'number' && Date.now() - startedAt <= CRON_START_WINDOW_MS;
+}
+
 /**
  * Task log event types
  */
@@ -103,7 +128,7 @@ export function showTaskLogWindow(): BrowserWindow {
     x,
     y,
     icon: getAppIcon(),
-    title: 'Dana Claw - Task Log',
+    title: 'DanaClaw - Task Log',
     frame: true,
     resizable: true,
     minimizable: true,
@@ -194,8 +219,8 @@ export function getJobName(jobId: string): string | undefined {
  */
 export function isWindowNotificationJob(jobId: string): boolean {
   const info = jobInfoCache.get(jobId);
-  // Default to true (show in window) if job info not found
-  return info?.useWindowNotification ?? true;
+  // Strict mode: unknown job IDs must not open task-log window.
+  return info?.useWindowNotification ?? false;
 }
 
 /**
@@ -216,6 +241,7 @@ export function parseCronNotification(params: Record<string, unknown>): TaskLogE
   const jobName = getJobName(jobId);
 
   if (action === 'started') {
+    markCronStarted(jobId);
     return {
       type: 'job-started',
       jobId,
@@ -249,10 +275,18 @@ export function parseAgentNotification(params: Record<string, unknown>): TaskLog
   if (!isWindowNotificationJob(jobId)) {
     return null;
   }
+
+  // Must be triggered by a recent cron "started" notification.
+  if (!hasRecentCronStart(jobId)) {
+    return null;
+  }
   
   const jobName = getJobName(jobId);
 
   if (stream === 'lifecycle' && data?.phase === 'start') {
+    if (runId) {
+      activeCronRuns.set(runId, jobId);
+    }
     return {
       type: 'job-running',
       jobId,
@@ -293,6 +327,11 @@ export function parseChatMessage(data: unknown): TaskLogEvent | null {
     if (!isWindowNotificationJob(jobId)) {
       return null;
     }
+
+    // Only accept chat events for runs already validated as cron-triggered.
+    if (!runId || activeCronRuns.get(runId) !== jobId) {
+      return null;
+    }
     
     const jobName = getJobName(jobId);
 
@@ -326,6 +365,7 @@ export function parseChatMessage(data: unknown): TaskLogEvent | null {
     }
 
     if (state === 'final') {
+      activeCronRuns.delete(runId);
       return {
         type: 'job-complete',
         jobId,

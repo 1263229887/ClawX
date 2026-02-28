@@ -2,7 +2,7 @@
     "gatewayNotRunning": "ゲートウェイが停止中",
     "gatewayRequired": "チャットを使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
     "welcome": {
-        "title": "ClawX チャット",
+        "title": "DanaClaw チャット",
         "subtitle": "AI アシスタントの準備ができました。下の入力欄から会話を始めましょう。",
         "askQuestions": "質問する",
         "askQuestionsDesc": "あらゆるトピックについて回答を得る",
@@ -14,6 +14,10 @@
         "newSession": "新しいセッション",
         "refresh": "チャットを更新",
         "showThinking": "思考を表示",
-        "hideThinking": "思考を非表示"
+        "hideThinking": "思考を非表示",
+        "deleteSession": "セッションを削除",
+        "deleteAllSessions": "すべてのセッションを削除",
+        "confirmDelete": "このセッションを削除してもよろしいですか？",
+        "confirmDeleteAll": "すべてのセッションを削除してもよろしいですか？この操作は元に戻せません。"
     }
 }

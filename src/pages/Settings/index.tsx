@@ -25,7 +25,6 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { useSettingsStore } from '@/stores/settings';
 import { useGatewayStore } from '@/stores/gateway';
-import { useUpdateStore } from '@/stores/update';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 // import { UpdateSettings } from '@/components/settings/UpdateSettings'; - temporarily hidden
 import { useTranslation } from 'react-i18next';
@@ -54,7 +53,6 @@ export function Settings() {
   } = useSettingsStore();
 
   const { status: gatewayStatus, restart: restartGateway } = useGatewayStore();
-  const currentVersion = useUpdateStore((state) => state.currentVersion);
   // const updateSetAutoDownload = useUpdateStore((state) => state.setAutoDownload); - temporarily hidden
   const [controlUiInfo, setControlUiInfo] = useState<ControlUiInfo | null>(null);
   const [openclawCliCommand, setOpenclawCliCommand] = useState('');
@@ -550,23 +548,6 @@ export function Settings() {
             <strong>{t('about.appName')}</strong> - {t('about.tagline')}
           </p>
           <p>{t('about.basedOn')}</p>
-          <p>{t('about.version', { version: currentVersion })}</p>
-          <div className="flex gap-4 pt-2">
-            <Button
-              variant="link"
-              className="h-auto p-0"
-              onClick={() => window.electron.openExternal('https://claw-x.com')}
-            >
-              {t('about.docs')}
-            </Button>
-            <Button
-              variant="link"
-              className="h-auto p-0"
-              onClick={() => window.electron.openExternal('https://github.com/ValueCell-ai/ClawX')}
-            >
-              {t('about.github')}
-            </Button>
-          </div>
         </CardContent>
       </Card>
     </div>
