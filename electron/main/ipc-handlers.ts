@@ -2,7 +2,7 @@
  * IPC Handlers
  * Registers all IPC handlers for main-renderer communication
  */
-import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
+import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage, Notification } from 'electron';
 import { existsSync, copyFileSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
@@ -34,6 +34,13 @@ import {
   updateAgentModelProvider,
 } from '../utils/openclaw-auth';
 import { logger } from '../utils/logger';
+import { 
+  sendTaskLogEvent, 
+  parseCronNotification, 
+  parseAgentNotification, 
+  parseChatMessage,
+  setJobInfo,
+} from './task-log-window';
 import {
   saveChannelConfig,
   getChannelConfig,
@@ -120,6 +127,9 @@ export function registerIpcHandlers(
 
   // File staging handlers (upload/send separation)
   registerFileHandlers();
+
+  // System notification handlers
+  registerNotificationHandlers();
 }
 
 /**
@@ -180,10 +190,19 @@ function transformCronJob(job: GatewayCronJob) {
   const message = job.payload?.message || job.payload?.text || '';
 
   // Build target from delivery info
-  const channelType = job.delivery?.channel || 'unknown';
+  // Check delivery mode: 'none' means window notification, otherwise use channel
+  const deliveryMode = job.delivery?.mode;
+  const deliveryChannel = job.delivery?.channel;
+  
+  // Window notification: no delivery, or mode is 'none', or no channel specified
+  const isWindowNotification = !job.delivery || deliveryMode === 'none' || !deliveryChannel;
+  
+  const channelType = isWindowNotification ? 'notification' : deliveryChannel;
+  const channelId = isWindowNotification ? 'notification' : (job.delivery?.to || deliveryChannel);
+  
   const target = {
     channelType,
-    channelId: channelType,
+    channelId,
     channelName: channelType,
   };
 
@@ -231,7 +250,16 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
       const data = result as { jobs?: GatewayCronJob[] };
       const jobs = data?.jobs ?? [];
       // Transform Gateway format to frontend format
-      return jobs.map(transformCronJob);
+      const transformedJobs = jobs.map(transformCronJob);
+      // Cache job info for task log window
+      for (const job of transformedJobs) {
+        if (job.id && job.name) {
+          // useWindowNotification = true if channelType is 'notification'
+          const useWindowNotification = job.target?.channelType === 'notification';
+          setJobInfo(job.id, job.name, useWindowNotification);
+        }
+      }
+      return transformedJobs;
     } catch (error) {
       console.error('Failed to list cron jobs:', error);
       throw error;
@@ -248,29 +276,56 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
   }) => {
     try {
       // Transform frontend input to Gateway cron.add format
-      // For Discord, the recipient must be prefixed with "channel:" or "user:"
-      const recipientId = input.target.channelId;
-      const deliveryTo = input.target.channelType === 'discord' && recipientId
-        ? `channel:${recipientId}`
-        : recipientId;
-
-      const gatewayInput = {
+      const isNotification = input.target.channelType === 'notification';
+      
+      console.log('[cron:create] Input:', JSON.stringify(input, null, 2));
+      console.log('[cron:create] isNotification:', isNotification);
+      
+      // Build base gateway input
+      const gatewayInput: Record<string, unknown> = {
         name: input.name,
         schedule: { kind: 'cron', expr: input.schedule },
         payload: { kind: 'agentTurn', message: input.message },
         enabled: input.enabled ?? true,
         wakeMode: 'next-heartbeat',
         sessionTarget: 'isolated',
-        delivery: {
+      };
+
+      // Set delivery based on notification type
+      if (isNotification) {
+        // Explicitly disable delivery for window notification
+        // Gateway defaults to announce mode if delivery is not specified
+        // Use mode: "none" to disable channel delivery
+        gatewayInput.delivery = { mode: 'none' };
+      } else {
+        // For channel notification, set delivery config
+        // For Discord, the recipient must be prefixed with "channel:" or "user:"
+        const recipientId = input.target.channelId;
+        const deliveryTo = input.target.channelType === 'discord' && recipientId
+          ? `channel:${recipientId}`
+          : recipientId;
+
+        gatewayInput.delivery = {
           mode: 'announce',
           channel: input.target.channelType,
           to: deliveryTo,
-        },
-      };
+        };
+      }
+      
+      console.log('[cron:create] Gateway input:', JSON.stringify(gatewayInput, null, 2));
+      
       const result = await gatewayManager.rpc('cron.add', gatewayInput);
+      console.log('[cron:create] Gateway result:', JSON.stringify(result, null, 2));
+      
       // Transform the returned job to frontend format
       if (result && typeof result === 'object') {
-        return transformCronJob(result as GatewayCronJob);
+        const job = transformCronJob(result as GatewayCronJob);
+        // Cache job info for task log window
+        if (job.id && job.name) {
+          // useWindowNotification = true if using notification type (no channel)
+          setJobInfo(job.id, job.name, isNotification);
+        }
+        return job;
       }
       return result;
     } catch (error) {
@@ -292,7 +347,11 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
         patch.payload = { kind: 'agentTurn', message: patch.message };
         delete patch.message;
       }
-      const result = await gatewayManager.rpc('cron.update', { id, patch });
+      // Remove target as Gateway doesn't support updating it
+      delete patch.target;
+      
+      // Gateway expects jobId, not id
+      const result = await gatewayManager.rpc('cron.update', { jobId: id, patch });
       return result;
     } catch (error) {
       console.error('Failed to update cron job:', error);
@@ -314,7 +373,8 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
   // Toggle a cron job enabled/disabled
   ipcMain.handle('cron:toggle', async (_, id: string, enabled: boolean) => {
     try {
-      const result = await gatewayManager.rpc('cron.update', { id, patch: { enabled } });
+      // Gateway expects jobId, not id
+      const result = await gatewayManager.rpc('cron.update', { jobId: id, patch: { enabled } });
       return result;
     } catch (error) {
       console.error('Failed to toggle cron job:', error);
@@ -325,11 +385,50 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
   // Trigger a cron job manually
   ipcMain.handle('cron:trigger', async (_, id: string) => {
     try {
-      const result = await gatewayManager.rpc('cron.run', { id, mode: 'force' });
+      console.log(`\n========== Cron Job Triggered ==========`);
+      console.log(`Job ID: ${id}`);
+      console.log(`Time: ${new Date().toISOString()}`);
+      
+      // Use longer timeout (5 minutes) for cron.run since AI tasks can take a while
+      const result = await gatewayManager.rpc('cron.run', { id, mode: 'force' }, 300000);
+      
+      console.log(`\n========== Cron Job Result ==========`);
+      console.log(JSON.stringify(result, null, 2));
+      console.log(`=====================================\n`);
+      
       return result;
     } catch (error) {
-      console.error('Failed to trigger cron job:', error);
+      console.error(`\n========== Cron Job Failed ==========`);
+      console.error(`Job ID: ${id}`);
+      console.error(`Error:`, error);
+      console.error(`=====================================\n`);
       throw error;
+    }
+  });
+
+  // Send system notification for cron task completion
+  ipcMain.handle('cron:sendNotification', async (_, params: {
+    title: string;
+    body: string;
+    success: boolean;
+  }) => {
+    try {
+      if (!Notification.isSupported()) {
+        logger.warn('System notifications not supported');
+        return { success: false, error: 'Notifications not supported' };
+      }
+
+      const notification = new Notification({
+        title: params.title,
+        body: params.body,
+        silent: false,
+      });
+
+      notification.show();
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to send cron notification:', error);
+      return { success: false, error: String(error) };
     }
   });
 }
@@ -569,6 +668,37 @@ function registerGatewayHandlers(
   });
 
   gatewayManager.on('notification', (notification) => {
+    // Log all notifications for debugging
+    const notifData = notification as { method?: string; params?: Record<string, unknown> };
+    console.log(`[Gateway Notification] Method: ${notifData.method}`);
+    if (notifData.params) {
+      console.log(`[Gateway Notification] Params: ${JSON.stringify(notifData.params)}`);
+    }
+    
+    // Handle cron notifications for task log window
+    if (notifData.method === 'cron' && notifData.params) {
+      const cronEvent = parseCronNotification(notifData.params);
+      if (cronEvent) {
+        sendTaskLogEvent(cronEvent);
+      }
+    }
+    
+    // Handle agent notifications for task log window
+    if (notifData.method === 'agent' && notifData.params) {
+      const agentEvent = parseAgentNotification(notifData.params);
+      if (agentEvent) {
+        sendTaskLogEvent(agentEvent);
+      }
+    }
+    
+    // Filter out channel delivery notifications since channel feature is hidden
+    const msg = notifData.params?.message || notifData.params?.error || '';
+    const msgStr = typeof msg === 'string' ? msg : JSON.stringify(msg);
+    if (msgStr.includes('announce') && msgStr.includes('delivery')) {
+      console.log('[Gateway] Ignoring channel delivery notification (channels disabled):', msgStr);
+      return;
+    }
+    
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:notification', notification);
     }
@@ -581,6 +711,26 @@ function registerGatewayHandlers(
   });
 
   gatewayManager.on('chat:message', (data) => {
+    // Print AI response to console for debugging
+    const msg = data as { message?: Record<string, unknown> };
+    if (msg.message) {
+      console.log(`\n========== AI Response ==========`);
+      console.log(`State: ${msg.message.state || 'unknown'}`);
+      // Properly stringify the message content
+      try {
+        console.log(`Full Message: ${JSON.stringify(msg.message, null, 2)}`);
+      } catch {
+        console.log(`Message: ${String(msg.message)}`);
+      }
+      console.log(`=================================\n`);
+      
+      // Send cron task AI responses to the task log window
+      const chatEvent = parseChatMessage(data);
+      if (chatEvent) {
+        sendTaskLogEvent(chatEvent);
+      }
+    }
+    
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:chat-message', data);
     }
@@ -593,6 +743,13 @@ function registerGatewayHandlers(
   });
 
   gatewayManager.on('error', (error) => {
+    // Filter out channel delivery errors since channel feature is hidden
+    const errorMsg = error.message || '';
+    if (errorMsg.includes('announce') && errorMsg.includes('delivery')) {
+      console.log('[Gateway] Ignoring channel delivery error (channels disabled):', errorMsg);
+      return;
+    }
+    
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:error', error.message);
     }
@@ -1849,5 +2006,38 @@ function registerFileHandlers(): void {
       }
     }
     return results;
+  });
+}
+
+/**
+ * System notification handlers
+ * Show native OS notifications for task completion, etc.
+ */
+function registerNotificationHandlers(): void {
+  // Show a system notification
+  ipcMain.handle('notification:show', async (_, params: {
+    title: string;
+    body: string;
+    silent?: boolean;
+  }) => {
+    try {
+      // Check if notifications are supported on this platform
+      if (!Notification.isSupported()) {
+        logger.warn('System notifications are not supported on this platform');
+        return { success: false, error: 'Notifications not supported' };
+      }
+
+      const notification = new Notification({
+        title: params.title,
+        body: params.body,
+        silent: params.silent ?? false,
+      });
+
+      notification.show();
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to show notification:', error);
+      return { success: false, error: String(error) };
+    }
   });
 }

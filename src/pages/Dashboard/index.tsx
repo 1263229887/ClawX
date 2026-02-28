@@ -85,7 +85,7 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Status Cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {/* Gateway Status */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -157,6 +157,7 @@ export function Dashboard() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {/* Add Channel */}
             <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
               <Link to="/channels">
                 <Plus className="h-5 w-5" />

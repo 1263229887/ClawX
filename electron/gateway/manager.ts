@@ -744,8 +744,6 @@ export class GatewayManager extends EventEmitter {
         ...providerEnv,
         ...uvEnv,
         OPENCLAW_GATEWAY_TOKEN: gatewayToken,
-        OPENCLAW_SKIP_CHANNELS: '',
-        CLAWDBOT_SKIP_CHANNELS: '',
       };
 
       // Critical: In packaged mode, make Electron binary act as Node.js

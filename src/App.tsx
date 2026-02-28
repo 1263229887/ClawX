@@ -16,6 +16,7 @@ import { Skills } from './pages/Skills';
 import { Cron } from './pages/Cron';
 import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
+import TaskLogPage from './pages/TaskLog';
 import { useSettingsStore } from './stores/settings';
 import { useGatewayStore } from './stores/gateway';
 
@@ -150,6 +151,9 @@ function App() {
         <Routes>
           {/* Setup wizard (shown on first launch) */}
           <Route path="/setup/*" element={<Setup />} />
+
+          {/* Task log window (standalone, no layout) */}
+          <Route path="/task-log" element={<TaskLogPage />} />
 
           {/* Main application routes */}
           <Route element={<MainLayout />}>

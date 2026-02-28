@@ -323,6 +323,56 @@ export function deleteChannelConfig(channelType: string): void {
 }
 
 /**
+ * Clear all channel configurations
+ * Used when channel feature is hidden/disabled
+ */
+export function clearAllChannels(): void {
+    const currentConfig = readOpenClawConfig();
+    let modified = false;
+
+    // Clear all channels under config.channels
+    if (currentConfig.channels && Object.keys(currentConfig.channels).length > 0) {
+        currentConfig.channels = {};
+        modified = true;
+        logger.info('Cleared all channel configurations');
+    }
+
+    // Clear plugin-based channels (like whatsapp)
+    if (currentConfig.plugins?.entries) {
+        for (const channelType of PLUGIN_CHANNELS) {
+            if (currentConfig.plugins.entries[channelType]) {
+                delete currentConfig.plugins.entries[channelType];
+                modified = true;
+                logger.info(`Cleared plugin channel: ${channelType}`);
+            }
+        }
+        // Cleanup empty objects
+        if (Object.keys(currentConfig.plugins.entries).length === 0) {
+            delete currentConfig.plugins.entries;
+        }
+        if (currentConfig.plugins && Object.keys(currentConfig.plugins).length === 0) {
+            delete currentConfig.plugins;
+        }
+    }
+
+    if (modified) {
+        writeOpenClawConfig(currentConfig);
+        console.log('All channel configurations cleared');
+    }
+
+    // Also clean up WhatsApp credentials directory
+    try {
+        const whatsappDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp');
+        if (existsSync(whatsappDir)) {
+            rmSync(whatsappDir, { recursive: true, force: true });
+            console.log('Deleted WhatsApp credentials directory');
+        }
+    } catch (error) {
+        console.error('Failed to delete WhatsApp credentials:', error);
+    }
+}
+
+/**
  * List all configured channels
  */
 export function listConfiguredChannels(): string[] {

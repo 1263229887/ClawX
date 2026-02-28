@@ -168,6 +168,7 @@ const electronAPI = {
         'oauth:code',
         'oauth:success',
         'oauth:error',
+        'task-log:event',
       ];
 
       if (validChannels.includes(channel)) {

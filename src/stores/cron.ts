@@ -91,10 +91,24 @@ export const useCronStore = create<CronState>((set) => ({
     try {
       const result = await window.electron.ipcRenderer.invoke('cron:trigger', id);
       console.log('Cron trigger result:', result);
+      
       // Refresh jobs after trigger to update lastRun/nextRun state
       try {
         const jobs = await window.electron.ipcRenderer.invoke('cron:list') as CronJob[];
         set({ jobs });
+        
+        // Find the triggered job and send notification if it's a notification-type task
+        const triggeredJob = jobs.find(j => j.id === id);
+        if (triggeredJob && triggeredJob.target.channelType === 'notification') {
+          const success = triggeredJob.lastRun?.success ?? true;
+          await window.electron.ipcRenderer.invoke('cron:sendNotification', {
+            title: triggeredJob.name,
+            body: success 
+              ? `Task completed successfully` 
+              : `Task failed: ${triggeredJob.lastRun?.error || 'Unknown error'}`,
+            success,
+          });
+        }
       } catch {
         // Ignore refresh error
       }

@@ -11,7 +11,7 @@ import {
   Terminal,
   ExternalLink,
   Key,
-  Download,
+  // Download, - temporarily hidden with updates
   Copy,
   FileText,
 } from 'lucide-react';
@@ -27,7 +27,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
-import { UpdateSettings } from '@/components/settings/UpdateSettings';
+// import { UpdateSettings } from '@/components/settings/UpdateSettings'; - temporarily hidden
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 type ControlUiInfo = {
@@ -45,17 +45,17 @@ export function Settings() {
     setLanguage,
     gatewayAutoStart,
     setGatewayAutoStart,
-    autoCheckUpdate,
-    setAutoCheckUpdate,
-    autoDownloadUpdate,
-    setAutoDownloadUpdate,
+    // autoCheckUpdate, - temporarily hidden with updates
+    // setAutoCheckUpdate, - temporarily hidden with updates
+    // autoDownloadUpdate, - temporarily hidden with updates
+    // setAutoDownloadUpdate, - temporarily hidden with updates
     devModeUnlocked,
     setDevModeUnlocked,
   } = useSettingsStore();
 
   const { status: gatewayStatus, restart: restartGateway } = useGatewayStore();
   const currentVersion = useUpdateStore((state) => state.currentVersion);
-  const updateSetAutoDownload = useUpdateStore((state) => state.setAutoDownload);
+  // const updateSetAutoDownload = useUpdateStore((state) => state.setAutoDownload); - temporarily hidden
   const [controlUiInfo, setControlUiInfo] = useState<ControlUiInfo | null>(null);
   const [openclawCliCommand, setOpenclawCliCommand] = useState('');
   const [openclawCliError, setOpenclawCliError] = useState<string | null>(null);
@@ -365,7 +365,7 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      {/* Updates */}
+      {/* Updates - temporarily hidden
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -409,6 +409,7 @@ export function Settings() {
           </div>
         </CardContent>
       </Card>
+      */}
 
       {/* Advanced */}
       <Card>

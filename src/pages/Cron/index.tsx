@@ -141,12 +141,14 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   const [schedule, setSchedule] = useState(initialSchedule);
   const [customSchedule, setCustomSchedule] = useState('');
   const [useCustom, setUseCustom] = useState(false);
-  const [channelId, setChannelId] = useState(job?.target.channelId || '');
+  // Default to 'notification' (system notification) instead of requiring a channel
+  const [channelId, setChannelId] = useState(job?.target.channelId || 'notification');
   const [discordChannelId, setDiscordChannelId] = useState('');
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
 
-  const selectedChannel = channels.find((c) => c.id === channelId);
+  const selectedChannel = channelId === 'notification' ? null : channels.find((c) => c.id === channelId);
   const isDiscord = selectedChannel?.type === 'discord';
+  const isNotification = channelId === 'notification';
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -157,7 +159,8 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
       toast.error(t('toast.messageRequired'));
       return;
     }
-    if (!channelId) {
+    // Channel is now optional - notification is the default
+    if (!isNotification && !channelId) {
       toast.error(t('toast.channelRequired'));
       return;
     }
@@ -175,16 +178,26 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
 
     setSaving(true);
     try {
-      // For Discord, use the manually entered channel ID; for others, use empty
-      const actualChannelId = selectedChannel!.type === 'discord'
-        ? discordChannelId.trim()
-        : '';
+      // For notification type, use special target
+      if (isNotification) {
+        await onSave({
+          name: name.trim(),
+          message: message.trim(),
+          schedule: finalSchedule,
+          target: {
+            channelType: 'notification',
+            channelId: '',
+            channelName: t('dialog.windowNotification'),
+          },
+          enabled,
+        });
+      } else {
+        // For Discord, use the manually entered channel ID; for others, use empty
+        const actualChannelId = selectedChannel!.type === 'discord'
+          ? discordChannelId.trim()
+          : '';
 
-      await onSave(
-        // ... (args omitted from replacement content, ensuring they match target if not changed, but here I am replacing the block)
-        // Wait, I should not replace the whole onSave call if I don't need to.
-        // Let's target the toast.
-        {
+        await onSave({
           name: name.trim(),
           message: message.trim(),
           schedule: finalSchedule,
@@ -195,6 +208,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
           },
           enabled,
         });
+      }
       onClose();
       toast.success(job ? t('toast.updated') : t('toast.created'));
     } catch (err) {
@@ -288,27 +302,33 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
           {/* Target Channel */}
           <div className="space-y-2">
             <Label>{t('dialog.targetChannel')}</Label>
-            {channels.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {t('dialog.noChannels')}
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                {channels.map((channel) => (
-                  <Button
-                    key={channel.id}
-                    type="button"
-                    variant={channelId === channel.id ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setChannelId(channel.id)}
-                    className="justify-start"
-                  >
-                    <span className="mr-2">{CHANNEL_ICONS[channel.type]}</span>
-                    {channel.name}
-                  </Button>
-                ))}
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-2">
+              {/* Window Notification Option - no channel binding */}
+              <Button
+                type="button"
+                variant={channelId === 'notification' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setChannelId('notification')}
+                className="justify-start"
+              >
+                <span className="mr-2">🪟</span>
+                {t('dialog.windowNotification')}
+              </Button>
+              {/* Channel options */}
+              {channels.map((channel) => (
+                <Button
+                  key={channel.id}
+                  type="button"
+                  variant={channelId === channel.id ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setChannelId(channel.id)}
+                  className="justify-start"
+                >
+                  <span className="mr-2">{CHANNEL_ICONS[channel.type]}</span>
+                  {channel.name}
+                </Button>
+              ))}
+            </div>
           </div>
 
           {/* Discord Channel ID - only shown when Discord is selected */}
@@ -379,6 +399,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
     try {
       await onTrigger();
       toast.success(t('toast.triggered'));
+      // System notification is now handled in the store after job completion
     } catch (error) {
       console.error('Failed to trigger cron job:', error);
       toast.error(`Failed to trigger task: ${error instanceof Error ? error.message : String(error)}`);
@@ -467,8 +488,9 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
           )}
         </div>
 
-        {/* Last Run Error */}
-        {job.lastRun && !job.lastRun.success && job.lastRun.error && (
+        {/* Last Run Error - filter out channel delivery errors since channels are disabled */}
+        {job.lastRun && !job.lastRun.success && job.lastRun.error && 
+         !job.lastRun.error.includes('announce') && !job.lastRun.error.includes('delivery') && (
           <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-600 dark:text-red-400">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <span>{job.lastRun.error}</span>
@@ -529,11 +551,23 @@ export function Cron() {
 
   const handleSave = useCallback(async (input: CronJobCreateInput) => {
     if (editingJob) {
-      await updateJob(editingJob.id, input);
+      // Check if notification type changed (window <-> channel, or different channel)
+      // Gateway cron.update cannot modify delivery config, so we need to delete and recreate
+      const oldChannelType = editingJob.target.channelType;
+      const newChannelType = input.target.channelType;
+      const targetChanged = oldChannelType !== newChannelType;
+      
+      if (targetChanged) {
+        // Delete old job and create new one to update delivery config
+        await deleteJob(editingJob.id);
+        await createJob(input);
+      } else {
+        await updateJob(editingJob.id, input);
+      }
     } else {
       await createJob(input);
     }
-  }, [editingJob, createJob, updateJob]);
+  }, [editingJob, createJob, updateJob, deleteJob]);
 
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
     try {

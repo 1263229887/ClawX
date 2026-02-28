@@ -17,7 +17,8 @@ export type ChannelType =
   | 'line'
   | 'msteams'
   | 'googlechat'
-  | 'mattermost';
+  | 'mattermost'
+  | 'notification'; // System notification (for cron tasks without channel)
 
 /**
  * Channel connection status
@@ -88,6 +89,7 @@ export const CHANNEL_ICONS: Record<ChannelType, string> = {
   msteams: '👔',
   googlechat: '💭',
   mattermost: '💠',
+  notification: '🪟',
 };
 
 /**
@@ -105,6 +107,7 @@ export const CHANNEL_NAMES: Record<ChannelType, string> = {
   msteams: 'Microsoft Teams',
   googlechat: 'Google Chat',
   mattermost: 'Mattermost',
+  notification: 'Window Notification',
 };
 
 /**
@@ -434,6 +437,16 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
       'channels:meta.mattermost.instructions.2',
     ],
     isPlugin: true,
+  },
+  notification: {
+    id: 'notification',
+    name: 'Window Notification',
+    icon: '🪟',
+    description: 'Send task results via task log window',
+    connectionType: 'token',
+    docsUrl: '',
+    configFields: [],
+    instructions: [],
   },
 };
 
