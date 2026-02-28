@@ -68,5 +68,9 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       emptyOutDir: true,
     },
+    // 注入环境变量到打包代码
+    define: {
+      __DANA_API_BASE_URL__: JSON.stringify(env.DANA_API_BASE_URL || 'https://mail.danaai.net'),
+    },
   };
 });

@@ -23,16 +23,21 @@ interface AuthState {
   checkAuth: () => Promise<void>;
 }
 
+// 声明构建时注入的全局变量
+declare const __DANA_API_BASE_URL__: string;
+
 // API base URL
 const getApiBaseUrl = () => {
-  // 开发环境使用 Vite 代理，生产环境使用真实地址
+  // 开发环境使用 Vite 代理，生产环境使用构建时注入的地址
   const isDev = window.electron?.isDev;
   if (isDev) {
-    // 开发环境通过 Vite proxy 代理到 http://192.168.80.8
+    // 开发环境通过 Vite proxy 代理
     return '/api/dana';
   }
-  // 生产环境使用 https://mail.danaai.net
-  return 'https://mail.danaai.net';
+  // 生产环境使用构建时注入的环境变量
+  return typeof __DANA_API_BASE_URL__ !== 'undefined' 
+    ? __DANA_API_BASE_URL__ 
+    : 'https://mail.danaai.net';
 };
 
 export const useAuthStore = create<AuthState>((set) => ({
