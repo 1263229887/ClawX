@@ -218,25 +218,28 @@ export async function getAllProvidersWithKeyInfo(): Promise<
   const results: Array<ProviderConfig & { hasKey: boolean; keyMasked: string | null }> = [];
   const activeOpenClawProviders = getActiveOpenClawProviders();
 
-  // We need to avoid deleting native ones like 'anthropic' or 'google'
-  // that don't need to exist in openclaw.json models.providers
-  const OpenClawBuiltinList = [
-    'anthropic', 'openai', 'google', 'moonshot', 'siliconflow', 'ollama'
+  // Native/built-in providers should never be dropped just because
+  // openclaw.json is temporarily absent or still syncing at startup.
+  const OPENCLAW_NATIVE_PROVIDER_TYPES = [
+    'anthropic', 'openai', 'google', 'openrouter',
+    'moonshot', 'siliconflow', 'minimax-portal', 'qwen-portal', 'ollama',
   ];
 
   for (const provider of providers) {
-    // Sync check: If it's a custom/OAuth provider and it no longer exists in OpenClaw config
-    // (e.g. wiped by Gateway due to missing plugin, or manually deleted by user)
-    // we should remove it from ClawX UI to stay consistent.
-    const isBuiltin = OpenClawBuiltinList.includes(provider.type);
+    // Sync check: If a user-managed provider no longer exists in OpenClaw
+    // config, remove it from ClawX UI to stay consistent.
+    // Built-ins are explicitly exempt from pruning.
+    const isBuiltin = provider.isBuiltIn || OPENCLAW_NATIVE_PROVIDER_TYPES.includes(provider.type);
+
     // For custom/ollama providers, the OpenClaw config key is derived as
     // "<type>-<suffix>" where suffix = first 8 chars of providerId with hyphens stripped.
-    // e.g. provider.id "custom-a1b2c3d4-..." → strip hyphens → "customa1b2c3d4..." → slice(0,8) → "customa1"
-    // → openClawKey = "custom-customa1"
+    // e.g. provider.id "custom-a1b2c3d4-..." -> strip hyphens -> "customa1b2c3d4..." -> slice(0,8) -> "customa1"
+    // -> openClawKey = "custom-customa1"
     // This must match getOpenClawProviderKey() in ipc-handlers.ts exactly.
     const openClawKey = (provider.type === 'custom' || provider.type === 'ollama')
       ? `${provider.type}-${provider.id.replace(/-/g, '').slice(0, 8)}`
       : provider.type;
+
     if (!isBuiltin && !activeOpenClawProviders.has(provider.type) && !activeOpenClawProviders.has(provider.id) && !activeOpenClawProviders.has(openClawKey)) {
       console.log(`[Sync] Provider ${provider.id} (${provider.type}) missing from OpenClaw, dropping from ClawX UI`);
       await deleteProvider(provider.id);
@@ -306,18 +309,5 @@ export async function initializeDefaultProvider(): Promise<void> {
     return;
   }
 
-  // Migrate legacy built-in default from older builds.
-  // Keep this narrow so we don't overwrite user-managed provider sets.
-  const legacyBuiltIn = providers.find((p) => p.id === 'openrouter-default' && p.isBuiltIn);
-  if (legacyBuiltIn && providers.length === 1) {
-    console.log('[Provider] Legacy built-in provider detected, migrating to Dana default');
-
-    await deleteProvider(legacyBuiltIn.id);
-    await saveProvider(DEFAULT_PROVIDER_CONFIG);
-    await storeApiKey(DEFAULT_PROVIDER_CONFIG.id, DEFAULT_PROVIDER_API_KEY);
-    await setDefaultProvider(DEFAULT_PROVIDER_CONFIG.id);
-
-    console.log('[Provider] Legacy built-in provider migrated:', DEFAULT_PROVIDER_CONFIG.id);
-  }
 }
 
