@@ -23,6 +23,7 @@ import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } fro
 import { logger } from '../utils/logger';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
+import { readOpenClawConfig } from '../utils/channel-config';
 import {
   loadOrCreateDeviceIdentity,
   signDevicePayload,
@@ -73,6 +74,47 @@ const DEFAULT_RECONNECT_CONFIG: ReconnectConfig = {
   baseDelay: 1000,
   maxDelay: 30000,
 };
+
+function firstNonEmptyString(values: Array<unknown>): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function maskProxyForLog(proxyUrl: string): string {
+  try {
+    const parsed = new URL(proxyUrl);
+    if (parsed.username) {
+      parsed.username = '***';
+    }
+    if (parsed.password) {
+      parsed.password = '***';
+    }
+    return parsed.toString();
+  } catch {
+    return proxyUrl;
+  }
+}
+
+function resolveGatewayProxyUrlFromConfig(): string | undefined {
+  try {
+    const config = readOpenClawConfig();
+    const channels = config.channels as Record<string, Record<string, unknown>> | undefined;
+
+    return firstNonEmptyString([
+      channels?.discord?.proxy,
+      channels?.telegram?.proxy,
+      channels?.feishu?.proxy,
+      channels?.slack?.proxy,
+      channels?.googlechat?.proxy,
+    ]);
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Get the Node.js-compatible executable path for spawning child processes.
@@ -746,12 +788,57 @@ export class GatewayManager extends EventEmitter {
         OPENCLAW_GATEWAY_TOKEN: gatewayToken,
       };
 
+      const existingProxyUrl = firstNonEmptyString([
+        spawnEnv.ALL_PROXY,
+        spawnEnv.all_proxy,
+        spawnEnv.HTTPS_PROXY,
+        spawnEnv.https_proxy,
+        spawnEnv.HTTP_PROXY,
+        spawnEnv.http_proxy,
+      ]);
+      const configProxyUrl = resolveGatewayProxyUrlFromConfig();
+      // Desktop channel settings should win over inherited shell/system proxy env.
+      // This avoids stale global proxy vars (e.g. old 7890) breaking channel sends.
+      const proxyUrl = configProxyUrl || existingProxyUrl;
+
+      if (proxyUrl) {
+        // OpenClaw's network clients (fetch/undici) need NODE_USE_ENV_PROXY enabled
+        // to honor HTTP(S)_PROXY/ALL_PROXY consistently in desktop runtime.
+        spawnEnv.NODE_USE_ENV_PROXY = spawnEnv.NODE_USE_ENV_PROXY || '1';
+        // Some Node fetch paths only reliably honor env proxy when the runtime
+        // flag is present in NODE_OPTIONS (especially in child-process contexts).
+        const nodeOptions = spawnEnv.NODE_OPTIONS ?? '';
+        if (!nodeOptions.includes('--use-env-proxy')) {
+          spawnEnv.NODE_OPTIONS = `${nodeOptions} --use-env-proxy`.trim();
+        }
+        spawnEnv.ALL_PROXY = proxyUrl;
+        spawnEnv.all_proxy = proxyUrl;
+        spawnEnv.HTTPS_PROXY = proxyUrl;
+        spawnEnv.https_proxy = proxyUrl;
+        spawnEnv.HTTP_PROXY = proxyUrl;
+        spawnEnv.http_proxy = proxyUrl;
+
+        const defaultNoProxy = '127.0.0.1,localhost,::1';
+        spawnEnv.NO_PROXY = firstNonEmptyString([spawnEnv.NO_PROXY, defaultNoProxy]);
+        spawnEnv.no_proxy = firstNonEmptyString([spawnEnv.no_proxy, defaultNoProxy]);
+
+        if (existingProxyUrl && configProxyUrl && existingProxyUrl !== configProxyUrl) {
+          logger.info(
+            `Gateway proxy overridden by channel config (env=${maskProxyForLog(existingProxyUrl)} -> config=${maskProxyForLog(configProxyUrl)})`
+          );
+        }
+
+        logger.info(`Gateway proxy environment enabled: ${maskProxyForLog(proxyUrl)}`);
+      }
+
+      // Prevent OpenClaw entry from respawning a child process.
+      // Single-process ownership keeps restart/stop deterministic and avoids
+      // losing injected proxy env in child processes.
+      spawnEnv['OPENCLAW_NO_RESPAWN'] = '1';
+
       // Critical: In packaged mode, make Electron binary act as Node.js
       if (app.isPackaged) {
         spawnEnv['ELECTRON_RUN_AS_NODE'] = '1';
-        // Prevent OpenClaw entry.ts from respawning itself (which would create
-        // another child process and a second "exec" dock icon on macOS)
-        spawnEnv['OPENCLAW_NO_RESPAWN'] = '1';
         // Pre-set the NODE_OPTIONS that entry.ts would have added via respawn
         const existingNodeOpts = spawnEnv['NODE_OPTIONS'] ?? '';
         if (!existingNodeOpts.includes('--disable-warning=ExperimentalWarning') &&

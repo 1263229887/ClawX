@@ -143,7 +143,10 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   const [useCustom, setUseCustom] = useState(false);
   // Default to 'notification' (system notification) instead of requiring a channel
   const [channelId, setChannelId] = useState(job?.target.channelId || 'notification');
-  const [discordChannelId, setDiscordChannelId] = useState('');
+  const [discordChannelId, setDiscordChannelId] = useState(() => {
+    if (job?.target.channelType !== 'discord') return '';
+    return job.target.channelId || '';
+  });
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
 
   const selectedChannel = channelId === 'notification' ? null : channels.find((c) => c.id === channelId);
@@ -164,12 +167,6 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
       toast.error(t('toast.channelRequired'));
       return;
     }
-    // Validate Discord channel ID when Discord is selected
-    if (selectedChannel?.type === 'discord' && !discordChannelId.trim()) {
-      toast.error(t('toast.discordIdRequired'));
-      return;
-    }
-
     const finalSchedule = useCustom ? customSchedule : schedule;
     if (!finalSchedule.trim()) {
       toast.error(t('toast.scheduleRequired'));
@@ -551,11 +548,15 @@ export function Cron() {
 
   const handleSave = useCallback(async (input: CronJobCreateInput) => {
     if (editingJob) {
-      // Check if notification type changed (window <-> channel, or different channel)
-      // Gateway cron.update cannot modify delivery config, so we need to delete and recreate
+      // Gateway cron.update cannot modify delivery config.
+      // Recreate the job whenever target channel type/ID changes.
+      const normalizeTargetId = (target: { channelType: string; channelId: string }) =>
+        target.channelType === 'notification' ? '' : target.channelId.trim();
       const oldChannelType = editingJob.target.channelType;
       const newChannelType = input.target.channelType;
-      const targetChanged = oldChannelType !== newChannelType;
+      const oldTargetId = normalizeTargetId(editingJob.target);
+      const newTargetId = normalizeTargetId(input.target);
+      const targetChanged = oldChannelType !== newChannelType || oldTargetId !== newTargetId;
       
       if (targetChanged) {
         // Delete old job and create new one to update delivery config

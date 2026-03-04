@@ -5,6 +5,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, rmSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import axios, { type AxiosProxyConfig } from 'axios';
 import { getOpenClawResolvedDir } from './paths';
 import * as logger from './logger';
 
@@ -39,6 +40,10 @@ function ensureConfigDir(): void {
     }
 }
 
+function stripUtf8Bom(content: string): string {
+    return content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
+}
+
 /**
  * Read OpenClaw configuration
  */
@@ -51,7 +56,7 @@ export function readOpenClawConfig(): OpenClawConfig {
 
     try {
         const content = readFileSync(CONFIG_FILE, 'utf-8');
-        return JSON.parse(content) as OpenClawConfig;
+        return JSON.parse(stripUtf8Bom(content)) as OpenClawConfig;
     } catch (error) {
         logger.error('Failed to read OpenClaw config', error);
         console.error('Failed to read OpenClaw config:', error);
@@ -117,40 +122,77 @@ export function saveChannelConfig(
     // Special handling for Discord: convert guildId/channelId to complete structure
     if (channelType === 'discord') {
         const { guildId, channelId, ...restConfig } = config;
+        const existingDiscordConfig = (currentConfig.channels[channelType] || {}) as Record<string, unknown>;
         transformedConfig = { ...restConfig };
 
-        // Add standard Discord config
-        transformedConfig.groupPolicy = 'allowlist';
-        transformedConfig.dm = { enabled: false };
-        transformedConfig.retry = {
-            attempts: 3,
-            minDelayMs: 500,
-            maxDelayMs: 30000,
-            jitter: 0.1,
-        };
+        // Preserve existing defaults where possible, instead of forcing strict values.
+        transformedConfig.groupPolicy = typeof existingDiscordConfig.groupPolicy === 'string'
+            ? existingDiscordConfig.groupPolicy
+            : 'allowlist';
+
+        const existingDm = existingDiscordConfig.dm as Record<string, unknown> | undefined;
+        const existingDmEnabled = typeof existingDm?.enabled === 'boolean' ? existingDm.enabled : undefined;
+        transformedConfig.dm = { enabled: existingDmEnabled ?? true };
+
+        const existingRetry = existingDiscordConfig.retry;
+        transformedConfig.retry = (existingRetry && typeof existingRetry === 'object')
+            ? existingRetry as Record<string, unknown>
+            : {
+                attempts: 3,
+                minDelayMs: 500,
+                maxDelayMs: 30000,
+                jitter: 0.1,
+            };
+
+        if (existingDiscordConfig.dmPolicy && transformedConfig.dmPolicy === undefined) {
+            transformedConfig.dmPolicy = existingDiscordConfig.dmPolicy;
+        }
+        if (existingDiscordConfig.allowFrom && transformedConfig.allowFrom === undefined) {
+            transformedConfig.allowFrom = existingDiscordConfig.allowFrom;
+        }
 
         // Build guilds structure
         if (guildId && typeof guildId === 'string' && guildId.trim()) {
+            const normalizedGuildId = guildId.trim();
+            const existingGuilds = existingDiscordConfig.guilds as Record<string, unknown> | undefined;
+            const existingGuild = existingGuilds?.[normalizedGuildId] as Record<string, unknown> | undefined;
+            const existingGuildRequireMention = typeof existingGuild?.requireMention === 'boolean'
+                ? existingGuild.requireMention
+                : false;
+            const existingUsers = Array.isArray(existingGuild?.users) && existingGuild.users.length > 0
+                ? existingGuild.users
+                : ['*'];
+            const existingGuildChannels = existingGuild?.channels as Record<string, unknown> | undefined;
+
             const guildConfig: Record<string, unknown> = {
-                users: ['*'],
-                requireMention: true,
+                users: existingUsers,
+                requireMention: existingGuildRequireMention,
             };
 
             // Add channels config
             if (channelId && typeof channelId === 'string' && channelId.trim()) {
-                // Specific channel
+                const normalizedChannelId = channelId.trim();
+                const existingChannelConfig = existingGuildChannels?.[normalizedChannelId] as Record<string, unknown> | undefined;
+                const channelRequireMention = typeof existingChannelConfig?.requireMention === 'boolean'
+                    ? existingChannelConfig.requireMention
+                    : false;
+
                 guildConfig.channels = {
-                    [channelId.trim()]: { allow: true, requireMention: true }
+                    [normalizedChannelId]: { allow: true, requireMention: channelRequireMention }
                 };
             } else {
-                // All channels
+                const wildcardConfig = existingGuildChannels?.['*'] as Record<string, unknown> | undefined;
+                const wildcardRequireMention = typeof wildcardConfig?.requireMention === 'boolean'
+                    ? wildcardConfig.requireMention
+                    : existingGuildRequireMention;
+
                 guildConfig.channels = {
-                    '*': { allow: true, requireMention: true }
+                    '*': { allow: true, requireMention: wildcardRequireMention }
                 };
             }
 
             transformedConfig.guilds = {
-                [guildId.trim()]: guildConfig
+                [normalizedGuildId]: guildConfig
             };
         }
     }
@@ -458,6 +500,90 @@ export interface CredentialValidationResult {
     details?: Record<string, string>;
 }
 
+const VALIDATION_TIMEOUT_MS = 15000;
+
+function firstNonEmptyString(values: Array<unknown>): string | undefined {
+    for (const value of values) {
+        if (typeof value === 'string' && value.trim().length > 0) {
+            return value.trim();
+        }
+    }
+    return undefined;
+}
+
+function parseAxiosProxy(proxyUrl: string): AxiosProxyConfig | undefined {
+    try {
+        const parsed = new URL(proxyUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return undefined;
+        }
+
+        const config: AxiosProxyConfig = {
+            protocol: parsed.protocol.replace(':', ''),
+            host: parsed.hostname,
+            port: parsed.port ? Number(parsed.port) : (parsed.protocol === 'https:' ? 443 : 80),
+        };
+
+        if (parsed.username) {
+            config.auth = {
+                username: decodeURIComponent(parsed.username),
+                password: decodeURIComponent(parsed.password || ''),
+            };
+        }
+
+        return config;
+    } catch {
+        return undefined;
+    }
+}
+
+function resolveProxyForValidation(
+    channelType: string,
+    config: Record<string, string>
+): { proxyUrl?: string; proxyConfig?: AxiosProxyConfig } {
+    const existingConfig = getChannelConfig(channelType);
+    const existingProxy = typeof existingConfig?.proxy === 'string' ? existingConfig.proxy : undefined;
+
+    const proxyUrl = firstNonEmptyString([
+        config.proxy,
+        existingProxy,
+        process.env.ALL_PROXY,
+        process.env.all_proxy,
+        process.env.HTTPS_PROXY,
+        process.env.https_proxy,
+        process.env.HTTP_PROXY,
+        process.env.http_proxy,
+    ]);
+
+    if (!proxyUrl) {
+        return {};
+    }
+
+    return {
+        proxyUrl,
+        proxyConfig: parseAxiosProxy(proxyUrl),
+    };
+}
+
+async function axiosGetJson(
+    url: string,
+    headers: Record<string, string>,
+    proxyConfig?: AxiosProxyConfig
+): Promise<{ ok: boolean; status: number; data: unknown }> {
+    const response = await axios.get(url, {
+        headers,
+        timeout: VALIDATION_TIMEOUT_MS,
+        validateStatus: () => true,
+        proxy: proxyConfig,
+    });
+
+    return {
+        ok: response.status >= 200 && response.status < 300,
+        status: response.status,
+        data: response.data,
+    };
+}
+
 /**
  * Validate channel credentials by calling the actual service APIs
  * This validates the raw config values BEFORE saving them.
@@ -488,6 +614,11 @@ async function validateDiscordCredentials(
 ): Promise<CredentialValidationResult> {
     const result: CredentialValidationResult = { valid: true, errors: [], warnings: [], details: {} };
     const token = config.token?.trim();
+    const { proxyUrl, proxyConfig } = resolveProxyForValidation('discord', config);
+
+    if (proxyUrl && !proxyConfig) {
+        result.warnings.push(`Discord proxy URL is set but unsupported/invalid for validation: ${proxyUrl}`);
+    }
 
     if (!token) {
         return { valid: false, errors: ['Bot token is required'], warnings: [] };
@@ -495,20 +626,21 @@ async function validateDiscordCredentials(
 
     // 1) Validate bot token by calling GET /users/@me
     try {
-        const meResponse = await fetch('https://discord.com/api/v10/users/@me', {
-            headers: { Authorization: `Bot ${token}` },
-        });
+        const meResponse = await axiosGetJson(
+            'https://discord.com/api/v10/users/@me',
+            { Authorization: `Bot ${token}` },
+            proxyConfig
+        );
 
         if (!meResponse.ok) {
             if (meResponse.status === 401) {
                 return { valid: false, errors: ['Invalid bot token. Please check and try again.'], warnings: [] };
             }
-            const errorData = await meResponse.json().catch(() => ({}));
-            const msg = (errorData as { message?: string }).message || `Discord API error: ${meResponse.status}`;
+            const msg = (meResponse.data as { message?: string })?.message || `Discord API error: ${meResponse.status}`;
             return { valid: false, errors: [msg], warnings: [] };
         }
 
-        const meData = (await meResponse.json()) as { username?: string; id?: string; bot?: boolean };
+        const meData = meResponse.data as { username?: string; id?: string; bot?: boolean };
         if (!meData.bot) {
             return {
                 valid: false,
@@ -519,9 +651,10 @@ async function validateDiscordCredentials(
         result.details!.botUsername = meData.username || 'Unknown';
         result.details!.botId = meData.id || '';
     } catch (error) {
+        const proxyHint = proxyUrl ? ` (proxy: ${proxyUrl})` : '';
         return {
             valid: false,
-            errors: [`Connection error when validating bot token: ${error instanceof Error ? error.message : String(error)}`],
+            errors: [`Connection error when validating bot token${proxyHint}: ${error instanceof Error ? error.message : String(error)}`],
             warnings: [],
         };
     }
@@ -530,9 +663,11 @@ async function validateDiscordCredentials(
     const guildId = config.guildId?.trim();
     if (guildId) {
         try {
-            const guildResponse = await fetch(`https://discord.com/api/v10/guilds/${guildId}`, {
-                headers: { Authorization: `Bot ${token}` },
-            });
+            const guildResponse = await axiosGetJson(
+                `https://discord.com/api/v10/guilds/${guildId}`,
+                { Authorization: `Bot ${token}` },
+                proxyConfig
+            );
 
             if (!guildResponse.ok) {
                 if (guildResponse.status === 403 || guildResponse.status === 404) {
@@ -545,7 +680,7 @@ async function validateDiscordCredentials(
                     result.valid = false;
                 }
             } else {
-                const guildData = (await guildResponse.json()) as { name?: string };
+                const guildData = guildResponse.data as { name?: string };
                 result.details!.guildName = guildData.name || 'Unknown';
             }
         } catch (error) {
@@ -557,9 +692,11 @@ async function validateDiscordCredentials(
     const channelId = config.channelId?.trim();
     if (channelId) {
         try {
-            const channelResponse = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
-                headers: { Authorization: `Bot ${token}` },
-            });
+            const channelResponse = await axiosGetJson(
+                `https://discord.com/api/v10/channels/${channelId}`,
+                { Authorization: `Bot ${token}` },
+                proxyConfig
+            );
 
             if (!channelResponse.ok) {
                 if (channelResponse.status === 403 || channelResponse.status === 404) {
@@ -572,7 +709,7 @@ async function validateDiscordCredentials(
                     result.valid = false;
                 }
             } else {
-                const channelData = (await channelResponse.json()) as { name?: string; guild_id?: string };
+                const channelData = channelResponse.data as { name?: string; guild_id?: string };
                 result.details!.channelName = channelData.name || 'Unknown';
 
                 // Cross-check: if both guild and channel are provided, make sure channel belongs to the guild
@@ -598,6 +735,12 @@ async function validateTelegramCredentials(
     config: Record<string, string>
 ): Promise<CredentialValidationResult> {
     const botToken = config.botToken?.trim();
+    const { proxyUrl, proxyConfig } = resolveProxyForValidation('telegram', config);
+
+    const warnings: string[] = [];
+    if (proxyUrl && !proxyConfig) {
+        warnings.push(`Telegram proxy URL is set but unsupported/invalid for validation: ${proxyUrl}`);
+    }
 
     const allowedUsers = config.allowedUsers?.trim();
 
@@ -610,14 +753,18 @@ async function validateTelegramCredentials(
     }
 
     try {
-        const response = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
-        const data = (await response.json()) as { ok?: boolean; description?: string; result?: { username?: string } };
+        const response = await axiosGetJson(
+            `https://api.telegram.org/bot${botToken}/getMe`,
+            {},
+            proxyConfig
+        );
+        const data = response.data as { ok?: boolean; description?: string; result?: { username?: string } };
 
         if (data.ok) {
             return {
                 valid: true,
                 errors: [],
-                warnings: [],
+                warnings,
                 details: { botUsername: data.result?.username || 'Unknown' },
             };
         }
@@ -625,13 +772,14 @@ async function validateTelegramCredentials(
         return {
             valid: false,
             errors: [data.description || 'Invalid bot token'],
-            warnings: [],
+            warnings,
         };
     } catch (error) {
+        const proxyHint = proxyUrl ? ` (proxy: ${proxyUrl})` : '';
         return {
             valid: false,
-            errors: [`Connection error: ${error instanceof Error ? error.message : String(error)}`],
-            warnings: [],
+            errors: [`Connection error${proxyHint}: ${error instanceof Error ? error.message : String(error)}`],
+            warnings,
         };
     }
 }

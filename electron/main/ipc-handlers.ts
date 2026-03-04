@@ -76,6 +76,34 @@ function getOpenClawProviderKey(type: string, providerId: string): string {
   return type;
 }
 
+function shouldUseResponsesApiForCustom(baseUrl?: string, model?: string): boolean {
+  const normalizedModel = (model || '').trim().toLowerCase();
+  if (normalizedModel.includes('codex')) return true;
+  if (/^gpt-5([.-]|$)/.test(normalizedModel)) return true;
+
+  const normalizedBaseUrl = (baseUrl || '').trim().toLowerCase();
+  if (!normalizedBaseUrl) return false;
+  return (
+    normalizedBaseUrl.includes('api.openai.com') ||
+    normalizedBaseUrl.includes('ai.novacode.top')
+  );
+}
+
+function resolveProviderApiProtocol(
+  type: string,
+  baseUrl: string | undefined,
+  model: string | undefined,
+  registryApi: string | undefined
+): string | undefined {
+  if (type === 'ollama') return 'openai-completions';
+  if (type === 'custom') {
+    return shouldUseResponsesApiForCustom(baseUrl, model)
+      ? 'openai-responses'
+      : 'openai-completions';
+  }
+  return registryApi;
+}
+
 /**
  * Register all IPC handlers
  */
@@ -184,6 +212,42 @@ interface GatewayCronJob {
     lastError?: string;
     lastDurationMs?: number;
   };
+}
+
+function normalizeDiscordDeliveryTarget(target: string): string {
+  const trimmed = target.trim();
+  if (!trimmed) return '';
+
+  // Keep explicit Discord target formats unchanged.
+  if (/^(channel:|user:)/i.test(trimmed) || /^<@!?\d+>$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Legacy plain numeric ID defaults to channel target.
+  return `channel:${trimmed}`;
+}
+
+function resolveDefaultDiscordDeliveryTarget(): string | undefined {
+  const discordConfig = getChannelConfig('discord');
+  if (!discordConfig || typeof discordConfig !== 'object') return undefined;
+
+  const guilds = (discordConfig as Record<string, unknown>).guilds;
+  if (!guilds || typeof guilds !== 'object') return undefined;
+
+  for (const guildConfigUnknown of Object.values(guilds as Record<string, unknown>)) {
+    if (!guildConfigUnknown || typeof guildConfigUnknown !== 'object') continue;
+
+    const channels = (guildConfigUnknown as Record<string, unknown>).channels;
+    if (!channels || typeof channels !== 'object') continue;
+
+    const channelId = Object.keys(channels as Record<string, unknown>)
+      .find((id) => id && id !== '*');
+    if (channelId) {
+      return `channel:${channelId}`;
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -303,17 +367,28 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
         gatewayInput.delivery = { mode: 'none' };
       } else {
         // For channel notification, set delivery config
-        // For Discord, the recipient must be prefixed with "channel:" or "user:"
-        const recipientId = input.target.channelId;
-        const deliveryTo = input.target.channelType === 'discord' && recipientId
-          ? `channel:${recipientId}`
-          : recipientId;
-
-        gatewayInput.delivery = {
+        const recipientId = input.target.channelId?.trim();
+        const delivery: { mode: string; channel: string; to?: string } = {
           mode: 'announce',
           channel: input.target.channelType,
-          to: deliveryTo,
         };
+
+        if (input.target.channelType === 'discord') {
+          // Cron dialog can leave Discord target empty; fall back to first configured
+          // guild channel from channels.discord.guilds.*.channels if available.
+          const fallbackTarget = resolveDefaultDiscordDeliveryTarget();
+          const normalizedTarget = recipientId
+            ? normalizeDiscordDeliveryTarget(recipientId)
+            : fallbackTarget;
+
+          if (normalizedTarget) {
+            delivery.to = normalizedTarget;
+          }
+        } else {
+          delivery.to = recipientId;
+        }
+
+        gatewayInput.delivery = delivery;
       }
       
       console.log('[cron:create] Gateway input:', JSON.stringify(gatewayInput, null, 2));
@@ -1032,7 +1107,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       // Sync the provider configuration to openclaw.json so Gateway knows about it
       try {
         const meta = getProviderConfig(config.type);
-        const api = config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api;
+        const api = resolveProviderApiProtocol(config.type, config.baseUrl, config.model, meta?.api);
 
         if (api) {
           syncProviderConfigToOpenClaw(ock, config.model, {
@@ -1050,7 +1125,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               const modelId = config.model;
               updateAgentModelProvider(ock, {
                 baseUrl: config.baseUrl,
-                api: 'openai-completions',
+                api,
                 models: modelId ? [{ id: modelId, name: modelId }] : [],
                 apiKey: resolvedKey,
               });
@@ -1158,7 +1233,12 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         // Sync the provider configuration to openclaw.json so Gateway knows about it
         try {
           const meta = getProviderConfig(nextConfig.type);
-          const api = nextConfig.type === 'custom' || nextConfig.type === 'ollama' ? 'openai-completions' : meta?.api;
+          const api = resolveProviderApiProtocol(
+            nextConfig.type,
+            nextConfig.baseUrl,
+            nextConfig.model,
+            meta?.api
+          );
 
           if (api) {
             syncProviderConfigToOpenClaw(ock, nextConfig.model, {
@@ -1176,7 +1256,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
                 const modelId = nextConfig.model;
                 updateAgentModelProvider(ock, {
                   baseUrl: nextConfig.baseUrl,
-                  api: 'openai-completions',
+                  api,
                   models: modelId ? [{ id: modelId, name: modelId }] : [],
                   apiKey: resolvedKey,
                 });
@@ -1193,9 +1273,15 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             if (nextConfig.type !== 'custom' && nextConfig.type !== 'ollama') {
               setOpenClawDefaultModel(nextConfig.type, modelOverride);
             } else {
+              const defaultApi = resolveProviderApiProtocol(
+                nextConfig.type,
+                nextConfig.baseUrl,
+                nextConfig.model,
+                meta?.api
+              ) || 'openai-completions';
               setOpenClawDefaultModelWithOverride(ock, modelOverride, {
                 baseUrl: nextConfig.baseUrl,
-                api: 'openai-completions',
+                api: defaultApi,
               });
             }
           }
@@ -1272,8 +1358,15 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       const provider = await getProvider(providerId);
       if (provider) {
         try {
+          const providerMeta = getProviderConfig(provider.type);
           const ock = getOpenClawProviderKey(provider.type, providerId);
           const providerKey = await getApiKey(providerId);
+          const runtimeApi = resolveProviderApiProtocol(
+            provider.type,
+            provider.baseUrl,
+            provider.model,
+            providerMeta?.api
+          ) || 'openai-completions';
 
           // OAuth providers (qwen-portal, minimax-portal) might use OAuth OR a direct API key.
           // Treat them as OAuth only if they don't have a local API key configured.
@@ -1291,7 +1384,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             if (provider.type === 'custom' || provider.type === 'ollama') {
               setOpenClawDefaultModelWithOverride(ock, modelOverride, {
                 baseUrl: provider.baseUrl,
-                api: 'openai-completions',
+                api: runtimeApi,
               });
             } else {
               setOpenClawDefaultModel(provider.type, modelOverride);
@@ -1333,7 +1426,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             const modelId = provider.model;
             updateAgentModelProvider(ock, {
               baseUrl: provider.baseUrl,
-              api: 'openai-completions',
+              api: runtimeApi,
               models: modelId ? [{ id: modelId, name: modelId }] : [],
               apiKey: providerKey,
             });
@@ -1409,7 +1502,7 @@ async function validateApiKeyWithProvider(
   providerType: string,
   apiKey: string,
   options?: { baseUrl?: string }
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<{ valid: boolean; error?: string; endpointUnsupported?: boolean }> {
   const profile = getValidationProfile(providerType);
   if (profile === 'none') {
     return { valid: true };
@@ -1441,6 +1534,11 @@ async function validateApiKeyWithProvider(
 
 function logValidationStatus(provider: string, status: number): void {
   console.log(`[clawx-validate] ${provider} HTTP ${status}`);
+}
+
+function extractValidationErrorMessage(data: unknown): string {
+  const obj = data as { error?: { message?: string }; message?: string } | null;
+  return obj?.error?.message || obj?.message || '';
 }
 
 function maskSecret(secret: string): string {
@@ -1540,8 +1638,7 @@ function classifyAuthResponse(
   if (status === 401 || status === 403) return { valid: false, error: 'Invalid API key' };
 
   // Try to extract an error message
-  const obj = data as { error?: { message?: string }; message?: string } | null;
-  const msg = obj?.error?.message || obj?.message || `API error: ${status}`;
+  const msg = extractValidationErrorMessage(data) || `API error: ${status}`;
   return { valid: false, error: msg };
 }
 
@@ -1561,18 +1658,85 @@ async function validateOpenAiCompatibleKey(
   const modelsUrl = buildOpenAiModelsUrl(trimmedBaseUrl);
   const modelsResult = await performProviderValidationRequest(providerType, modelsUrl, headers);
 
-  // If /models returned 404, the provider likely doesn't implement it (e.g. MiniMax).
-  // Fall back to a minimal /chat/completions POST which almost all providers support.
+  // If /models returned 404, the provider likely doesn't implement it.
+  // Probe /responses first (needed by Codex-only endpoints), then fall back to /chat/completions.
   if (modelsResult.error?.includes('API error: 404')) {
     console.log(
-      `[clawx-validate] ${providerType} /models returned 404, falling back to /chat/completions probe`
+      `[clawx-validate] ${providerType} /models returned 404, trying /responses probe first`
     );
     const base = normalizeBaseUrl(trimmedBaseUrl);
+    const responsesUrl = `${base}/responses`;
+    const responsesResult = await performResponsesProbe(providerType, responsesUrl, headers);
+    if (!responsesResult.endpointUnsupported) {
+      return responsesResult;
+    }
+
+    console.log(
+      `[clawx-validate] ${providerType} /responses unsupported, falling back to /chat/completions probe`
+    );
     const chatUrl = `${base}/chat/completions`;
-    return await performChatCompletionsProbe(providerType, chatUrl, headers);
+    const chatResult = await performChatCompletionsProbe(providerType, chatUrl, headers);
+    if (chatResult.endpointUnsupported) {
+      return {
+        valid: false,
+        error:
+          'This endpoint rejects /chat/completions and expects /v1/responses. Please use an OpenAI-Responses compatible provider configuration.',
+      };
+    }
+    return chatResult;
   }
 
   return modelsResult;
+}
+
+async function performResponsesProbe(
+  providerLabel: string,
+  url: string,
+  headers: Record<string, string>
+): Promise<{ valid: boolean; error?: string; endpointUnsupported?: boolean }> {
+  try {
+    logValidationRequest(providerLabel, 'POST', url, headers);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'validation-probe',
+        input: 'hi',
+        max_output_tokens: 1,
+      }),
+    });
+    logValidationStatus(providerLabel, response.status);
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 401 || response.status === 403) {
+      return { valid: false, error: 'Invalid API key' };
+    }
+
+    if (response.status === 404 || response.status === 405) {
+      return {
+        valid: false,
+        endpointUnsupported: true,
+        error: `API error: ${response.status}`,
+      };
+    }
+
+    // 200/400/422/429 all indicate the endpoint exists and the key was accepted.
+    if (
+      (response.status >= 200 && response.status < 300) ||
+      response.status === 400 ||
+      response.status === 422 ||
+      response.status === 429
+    ) {
+      return { valid: true };
+    }
+
+    return classifyAuthResponse(response.status, data);
+  } catch (error) {
+    return {
+      valid: false,
+      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 /**
@@ -1585,7 +1749,7 @@ async function performChatCompletionsProbe(
   providerLabel: string,
   url: string,
   headers: Record<string, string>
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<{ valid: boolean; error?: string; endpointUnsupported?: boolean }> {
   try {
     logValidationRequest(providerLabel, 'POST', url, headers);
     const response = await fetch(url, {
@@ -1599,12 +1763,25 @@ async function performChatCompletionsProbe(
     });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
+    const errorMessage = extractValidationErrorMessage(data).toLowerCase();
 
-    // 401/403 → invalid key
     if (response.status === 401 || response.status === 403) {
       return { valid: false, error: 'Invalid API key' };
     }
-    // 200, 400 (bad model but key accepted), 429 → key is valid
+
+    if (
+      response.status === 400 &&
+      errorMessage.includes('/chat/completions') &&
+      errorMessage.includes('/v1/responses')
+    ) {
+      return {
+        valid: false,
+        endpointUnsupported: true,
+        error: extractValidationErrorMessage(data) || 'Unsupported legacy /chat/completions protocol',
+      };
+    }
+
+    // 200, 400 (bad model but key accepted), 429 are treated as valid key checks.
     if (
       (response.status >= 200 && response.status < 300) ||
       response.status === 400 ||
@@ -2087,7 +2264,7 @@ function registerAuthHandlers(): void {
       logger.info('[auth:login] API response status:', response.status);
       logger.info('[auth:login] API response body:', responseText);
       
-      // Parse response - token handling待定，等看到实际返回再调整
+      // Parse response - token handling?????????????
       let result: Record<string, unknown>;
       try {
         result = JSON.parse(responseText);
@@ -2099,13 +2276,13 @@ function registerAuthHandlers(): void {
         };
       }
 
-      // TODO: Token 处理待定，先返回原始响应供调试
+      // TODO: Token ???????????????
       logger.info('[auth:login] Parsed result:', JSON.stringify(result, null, 2));
 
-      // 根据 API 返回的 code 字段判断：code=200 为成功，其他为失败
+      // ?? API ??? code ?????code=200 ?????????
       const code = result.code as number | undefined;
       if (response.ok && (code === 200 || code === 0)) {
-        // Token 处理待定 - 等用户提供成功响应后再调整
+        // Token ???? - ?????????????
         const token = 'pending-token-handling';
         await saveAuthData(token, username);
 
@@ -2113,7 +2290,7 @@ function registerAuthHandlers(): void {
         return {
           success: true,
           user: { username },
-          rawResponse: result, // 返回原始响应供调试
+          rawResponse: result, // ?????????
         };
       } else {
         const errorMsg = (result.message || result.error || result.msg || 'Login failed') as string;
@@ -2193,3 +2370,4 @@ function registerAuthHandlers(): void {
     }
   });
 }
+

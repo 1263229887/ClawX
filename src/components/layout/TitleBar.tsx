@@ -8,6 +8,7 @@ import { Minus, Square, X, Copy } from 'lucide-react';
 import logoPng from '@/assets/logo.png';
 
 const isMac = window.electron?.platform === 'darwin';
+const showEnvBadge = import.meta.env.MODE !== 'production';
 
 export function TitleBar() {
   if (isMac) {
@@ -52,6 +53,11 @@ function WindowsTitleBar() {
         <span className="text-xs font-medium text-muted-foreground select-none">
           DanaClaw
         </span>
+        {showEnvBadge && (
+          <span className="rounded-sm bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white select-none">
+            DEV
+          </span>
+        )}
       </div>
 
       {/* Right: Window Controls */}

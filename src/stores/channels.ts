@@ -3,7 +3,7 @@
  * Manages messaging channel state
  */
 import { create } from 'zustand';
-import type { Channel, ChannelType } from '../types/channel';
+import { CHANNEL_NAMES, type Channel, type ChannelType } from '../types/channel';
 
 interface AddChannelParams {
   type: ChannelType;
@@ -34,12 +34,35 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   error: null,
 
   fetchChannels: async () => {
+    const loadConfiguredChannelsFallback = async (): Promise<Channel[]> => {
+      try {
+        const configured = await window.electron.ipcRenderer.invoke('channel:listConfigured') as {
+          success: boolean;
+          channels?: string[];
+        };
+
+        if (!configured.success || !configured.channels) {
+          return [];
+        }
+
+        return configured.channels
+          .filter((type): type is ChannelType => type in CHANNEL_NAMES && type !== 'notification')
+          .map((type) => ({
+            id: `${type}-configured`,
+            type,
+            name: CHANNEL_NAMES[type],
+            status: 'disconnected',
+          }));
+      } catch {
+        return [];
+      }
+    };
+
     set({ loading: true, error: null });
     try {
       const result = await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
-        'channels.status',
-        { probe: true }
+        'channels.status'
       ) as {
         success: boolean;
         result?: {
@@ -69,6 +92,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
         // Parse the complex channels.status response into simple Channel objects
         const channelOrder = data.channelOrder || Object.keys(data.channels || {});
         for (const channelId of channelOrder) {
+          const accounts = data.channelAccounts?.[channelId] || [];
           const summary = (data.channels as Record<string, unknown> | undefined)?.[channelId] as Record<string, unknown> | undefined;
           const configured =
             typeof summary?.configured === 'boolean'
@@ -76,9 +100,9 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
               : typeof (summary as { running?: boolean })?.running === 'boolean'
                 ? true
                 : false;
-          if (!configured) continue;
+          const hasActiveAccount = accounts.some((a) => a.connected === true || a.linked === true || a.running === true);
+          if (!configured && !hasActiveAccount) continue;
 
-          const accounts = data.channelAccounts?.[channelId] || [];
           const defaultAccountId = data.channelDefaultAccountId?.[channelId];
           const primaryAccount =
             (defaultAccountId ? accounts.find((a) => a.accountId === defaultAccountId) : undefined) ||
@@ -126,14 +150,26 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
           });
         }
 
+        // Ensure configured channels from local config are still selectable
+        // even if Gateway status payload is partial.
+        const configuredFallback = await loadConfiguredChannelsFallback();
+        const existingTypes = new Set(channels.map((channel) => channel.type));
+        for (const fallbackChannel of configuredFallback) {
+          if (existingTypes.has(fallbackChannel.type)) continue;
+          channels.push(fallbackChannel);
+          existingTypes.add(fallbackChannel.type);
+        }
+
         set({ channels, loading: false });
       } else {
-        // Gateway not available - try to show channels from local config
-        set({ channels: [], loading: false });
+        // Gateway not available - show channels from local config
+        const fallbackChannels = await loadConfiguredChannelsFallback();
+        set({ channels: fallbackChannels, loading: false });
       }
     } catch {
-      // Gateway not connected, show empty
-      set({ channels: [], loading: false });
+      // Gateway not connected - show channels from local config
+      const fallbackChannels = await loadConfiguredChannelsFallback();
+      set({ channels: fallbackChannels, loading: false });
     }
   },
 

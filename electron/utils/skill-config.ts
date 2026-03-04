@@ -9,6 +9,10 @@ import { homedir } from 'os';
 
 const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
 
+function stripUtf8Bom(content: string): string {
+    return content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
+}
+
 interface SkillEntry {
     enabled?: boolean;
     apiKey?: string;
@@ -32,7 +36,7 @@ function readConfig(): OpenClawConfig {
     }
     try {
         const raw = readFileSync(OPENCLAW_CONFIG_PATH, 'utf-8');
-        return JSON.parse(raw);
+        return JSON.parse(stripUtf8Bom(raw));
     } catch (err) {
         console.error('Failed to read openclaw config:', err);
         return {};

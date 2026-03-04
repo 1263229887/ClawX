@@ -15,6 +15,18 @@ import {
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 
+function stripUtf8Bom(content: string): string {
+  return content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
+}
+
+function parseJsonText<T>(raw: string): T {
+  return JSON.parse(stripUtf8Bom(raw)) as T;
+}
+
+function readJsonFile<T>(filePath: string): T {
+  return parseJsonText<T>(readFileSync(filePath, 'utf-8'));
+}
+
 /**
  * Auth profile entry for an API key
  */
@@ -61,7 +73,7 @@ function readAuthProfiles(agentId = 'main'): AuthProfilesStore {
   try {
     if (existsSync(filePath)) {
       const raw = readFileSync(filePath, 'utf-8');
-      const data = JSON.parse(raw) as AuthProfilesStore;
+      const data = parseJsonText<AuthProfilesStore>(raw);
       // Validate basic structure
       if (data.version && data.profiles && typeof data.profiles === 'object') {
         return data;
@@ -282,7 +294,7 @@ export function removeProviderFromOpenClaw(provider: string): void {
   const configPath = join(homedir(), '.openclaw', 'openclaw.json');
   try {
     if (existsSync(configPath)) {
-      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      const config = readJsonFile<Record<string, unknown>>(configPath);
       let modified = false;
 
       // Disable plugin (for OAuth like qwen-portal-auth)
@@ -343,7 +355,7 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
 
   try {
     if (existsSync(configPath)) {
-      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      config = readJsonFile<Record<string, unknown>>(configPath);
     }
   } catch (err) {
     console.warn('Failed to read openclaw.json, creating fresh config:', err);
@@ -463,7 +475,7 @@ export function syncProviderConfigToOpenClaw(
   let config: Record<string, unknown> = {};
   try {
     if (existsSync(configPath)) {
-      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      config = readJsonFile<Record<string, unknown>>(configPath);
     }
   } catch (err) {
     console.warn('Failed to read openclaw.json, creating fresh config:', err);
@@ -527,7 +539,7 @@ export function setOpenClawDefaultModelWithOverride(
   let config: Record<string, unknown> = {};
   try {
     if (existsSync(configPath)) {
-      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      config = readJsonFile<Record<string, unknown>>(configPath);
     }
   } catch (err) {
     console.warn('Failed to read openclaw.json, creating fresh config:', err);
@@ -617,7 +629,7 @@ export function getActiveOpenClawProviders(): Set<string> {
   // 1. Read openclaw.json models.providers
   try {
     if (existsSync(configPath)) {
-      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      const config = readJsonFile<Record<string, unknown>>(configPath);
       const providers = config.models?.providers;
       if (providers && typeof providers === 'object') {
         for (const key of Object.keys(providers)) {
@@ -632,7 +644,7 @@ export function getActiveOpenClawProviders(): Set<string> {
   // 2. Read openclaw.json plugins.entries for OAuth providers
   try {
     if (existsSync(configPath)) {
-      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      const config = readJsonFile<Record<string, unknown>>(configPath);
       const plugins = config.plugins?.entries;
       if (plugins && typeof plugins === 'object') {
         for (const [pluginId, meta] of Object.entries(plugins)) {
@@ -666,7 +678,7 @@ export function syncGatewayTokenToConfig(token: string): void {
   let config: Record<string, unknown> = {};
   try {
     if (existsSync(configPath)) {
-      config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+      config = readJsonFile<Record<string, unknown>>(configPath);
     }
   } catch {
     // start from a blank config if the file is corrupt
@@ -710,7 +722,7 @@ export function syncBrowserConfigToOpenClaw(): void {
   let config: Record<string, unknown> = {};
   try {
     if (existsSync(configPath)) {
-      config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+      config = readJsonFile<Record<string, unknown>>(configPath);
     }
   } catch {
     // start from a blank config if the file is corrupt
@@ -774,7 +786,7 @@ export function updateAgentModelProvider(
     let data: Record<string, unknown> = {};
     try {
       if (existsSync(modelsPath)) {
-        data = JSON.parse(readFileSync(modelsPath, 'utf-8')) as Record<string, unknown>;
+        data = readJsonFile<Record<string, unknown>>(modelsPath);
       }
     } catch {
       // corrupt / missing – start with an empty object
