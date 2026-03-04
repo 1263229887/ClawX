@@ -266,11 +266,11 @@ export async function getAllProvidersWithKeyInfo(): Promise<
 
 // ==================== Default Provider Initialization ====================
 
-/** Default OpenRouter provider configuration */
+/** Default built-in provider configuration for first launch */
 const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
-  id: 'openrouter-default',
-  type: 'openrouter',
-  name: 'OpenRouter (Default)',
+  id: 'custom-dana-default',
+  type: 'custom',
+  name: 'dana',
   baseUrl: 'https://openrouter.ai/api/v1',
   model: 'stepfun/step-3.5-flash:free',
   enabled: true,
@@ -280,11 +280,11 @@ const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
 };
 
 /** Default API key for built-in provider */
-const DEFAULT_PROVIDER_API_KEY = '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';
+const DEFAULT_PROVIDER_API_KEY = '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';
 
 /**
  * Initialize default provider on first launch
- * Creates the built-in OpenRouter provider if no providers exist
+ * Creates the built-in provider if no providers exist
  */
 export async function initializeDefaultProvider(): Promise<void> {
   const providers = await getAllProviders();
@@ -303,6 +303,21 @@ export async function initializeDefaultProvider(): Promise<void> {
     await setDefaultProvider(DEFAULT_PROVIDER_CONFIG.id);
 
     console.log('[Provider] Default provider initialized:', DEFAULT_PROVIDER_CONFIG.id);
+    return;
+  }
+
+  // Migrate legacy built-in default from older builds.
+  // Keep this narrow so we don't overwrite user-managed provider sets.
+  const legacyBuiltIn = providers.find((p) => p.id === 'openrouter-default' && p.isBuiltIn);
+  if (legacyBuiltIn && providers.length === 1) {
+    console.log('[Provider] Legacy built-in provider detected, migrating to Dana default');
+
+    await deleteProvider(legacyBuiltIn.id);
+    await saveProvider(DEFAULT_PROVIDER_CONFIG);
+    await storeApiKey(DEFAULT_PROVIDER_CONFIG.id, DEFAULT_PROVIDER_API_KEY);
+    await setDefaultProvider(DEFAULT_PROVIDER_CONFIG.id);
+
+    console.log('[Provider] Legacy built-in provider migrated:', DEFAULT_PROVIDER_CONFIG.id);
   }
 }
 

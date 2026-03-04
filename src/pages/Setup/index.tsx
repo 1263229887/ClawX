@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { TitleBar } from '@/components/layout/TitleBar';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
@@ -58,7 +59,7 @@ const STEP = {
 const steps: SetupStep[] = [
   {
     id: 'welcome',
-    title: 'Welcome to ClawX',
+    title: 'Welcome to DanaClaw',
     description: 'Your AI assistant is ready to be configured',
   },
   {
@@ -84,7 +85,7 @@ const steps: SetupStep[] = [
   {
     id: 'complete',
     title: 'All Set!',
-    description: 'ClawX is ready to use',
+    description: 'DanaClaw is ready to use',
   },
 ];
 
@@ -318,7 +319,7 @@ function WelcomeContent() {
   return (
     <div className="text-center space-y-4">
       <div className="mb-4 flex justify-center">
-        <img src={clawxIcon} alt="ClawX" className="h-16 w-16" />
+        <img src={clawxIcon} alt="DanaClaw" className="h-16 w-16" />
       </div>
       <h2 className="text-xl font-semibold">{t('welcome.title')}</h2>
       <p className="text-muted-foreground">
@@ -711,6 +712,7 @@ function ProviderContent({
   const [validating, setValidating] = useState(false);
   const [keyValid, setKeyValid] = useState<boolean | null>(null);
   const [selectedProviderConfigId, setSelectedProviderConfigId] = useState<string | null>(null);
+  const [defaultProviderType, setDefaultProviderType] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
@@ -742,6 +744,7 @@ function ProviderContent({
       if (selectedProvider) {
         try {
           await window.electron.ipcRenderer.invoke('provider:setDefault', selectedProvider);
+          setDefaultProviderType(selectedProvider);
         } catch (error) {
           console.error('Failed to set default provider:', error);
         }
@@ -801,6 +804,7 @@ function ProviderContent({
       try {
         const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
         const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
+        const defaultProvider = defaultId ? list.find((p) => p.id === defaultId) : undefined;
         const setupProviderTypes = new Set<string>(providers.map((p) => p.id));
         const setupCandidates = list.filter((p) => setupProviderTypes.has(p.type));
         const preferred =
@@ -808,6 +812,7 @@ function ProviderContent({
           || setupCandidates.find((p) => p.hasKey)
           || setupCandidates[0];
         if (preferred && !cancelled) {
+          setDefaultProviderType(defaultProvider?.type || null);
           onSelectProvider(preferred.type);
           setSelectedProviderConfigId(preferred.id);
           const typeInfo = providers.find((p) => p.id === preferred.type);
@@ -837,6 +842,8 @@ function ProviderContent({
       try {
         const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
         const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
+        const defaultProvider = defaultId ? list.find((p) => p.id === defaultId) : undefined;
+        setDefaultProviderType(defaultProvider?.type || null);
         const sameType = list.filter((p) => p.type === selectedProvider);
         const preferredInstance =
           (defaultId && sameType.find((p) => p.id === defaultId))
@@ -971,6 +978,7 @@ function ProviderContent({
       }
 
       setSelectedProviderConfigId(providerIdForSave);
+      setDefaultProviderType(selectedProvider);
       onConfiguredChange(true);
       toast.success(t('provider.valid'));
     } catch (error) {
@@ -1035,6 +1043,11 @@ function ProviderContent({
                   ? `${selectedProviderData.id === 'custom' ? t('settings:aiProviders.custom') : selectedProviderData.name}${selectedProviderData.model ? ` — ${selectedProviderData.model}` : ''}`
                   : t('provider.selectPlaceholder')}
               </span>
+              {selectedProviderData && selectedProviderData.id === defaultProviderType && (
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                  {t('settings:aiProviders.card.default')}
+                </Badge>
+              )}
             </div>
             <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform', providerMenuOpen && 'rotate-180')} />
           </button>
@@ -1073,7 +1086,14 @@ function ProviderContent({
                       )}
                       <span className="truncate">{p.id === 'custom' ? t('settings:aiProviders.custom') : p.name}{p.model ? ` — ${p.model}` : ''}</span>
                     </div>
-                    {isSelected && <Check className="h-4 w-4 text-primary shrink-0" />}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {p.id === defaultProviderType && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          {t('settings:aiProviders.card.default')}
+                        </Badge>
+                      )}
+                      {isSelected && <Check className="h-4 w-4 text-primary shrink-0" />}
+                    </div>
                   </button>
                 );
               })}
