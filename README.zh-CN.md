@@ -277,6 +277,13 @@ pnpm test:coverage        # 生成覆盖率报告
 pnpm test:e2e             # 运行 Playwright E2E 测试
 
 # 构建与打包
+# ⚠️ 重要：打包前必须先下载 uv 二进制文件
+pnpm run uv:download:mac  # 下载 macOS 版 uv（打包 macOS 用）
+pnpm run uv:download:win  # 下载 Windows 版 uv（打包 Windows 用）
+pnpm run uv:download:linux # 下载 Linux 版 uv（打包 Linux 用）
+# 或者下载所有平台：
+pnpm run uv:download:all # 下载所有平台的 uv
+
 pnpm build                # 完整生产构建
 pnpm package              # 为当前平台打包
 pnpm package:mac          # 为 macOS 打包
