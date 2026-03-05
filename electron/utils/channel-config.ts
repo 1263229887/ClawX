@@ -44,6 +44,44 @@ function stripUtf8Bom(content: string): string {
     return content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
 }
 
+function decodeJsonBuffer(buffer: Buffer): string {
+    if (buffer.length >= 2) {
+        // UTF-16 LE BOM
+        if (buffer[0] === 0xFF && buffer[1] === 0xFE) {
+            return stripUtf8Bom(buffer.toString('utf16le'));
+        }
+
+        // UTF-16 BE BOM -> convert to LE first
+        if (buffer[0] === 0xFE && buffer[1] === 0xFF) {
+            const swapped = Buffer.allocUnsafe(buffer.length - 2);
+            for (let i = 2, j = 0; i + 1 < buffer.length; i += 2, j += 2) {
+                swapped[j] = buffer[i + 1];
+                swapped[j + 1] = buffer[i];
+            }
+            return stripUtf8Bom(swapped.toString('utf16le'));
+        }
+    }
+
+    return stripUtf8Bom(buffer.toString('utf8'));
+}
+
+function normalizeJsonStart(content: string): string {
+    const trimmed = content.trimStart();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        return trimmed;
+    }
+
+    const firstObject = trimmed.indexOf('{');
+    const firstArray = trimmed.indexOf('[');
+    const candidateIndices = [firstObject, firstArray].filter((index) => index >= 0);
+    if (candidateIndices.length === 0) {
+        return trimmed;
+    }
+
+    const firstJsonIndex = Math.min(...candidateIndices);
+    return trimmed.slice(firstJsonIndex);
+}
+
 /**
  * Read OpenClaw configuration
  */
@@ -55,8 +93,9 @@ export function readOpenClawConfig(): OpenClawConfig {
     }
 
     try {
-        const content = readFileSync(CONFIG_FILE, 'utf-8');
-        return JSON.parse(stripUtf8Bom(content)) as OpenClawConfig;
+        const raw = readFileSync(CONFIG_FILE);
+        const content = normalizeJsonStart(decodeJsonBuffer(raw));
+        return JSON.parse(content) as OpenClawConfig;
     } catch (error) {
         logger.error('Failed to read OpenClaw config', error);
         console.error('Failed to read OpenClaw config:', error);

@@ -27,6 +27,15 @@ const gatewayManager = new GatewayManager();
 const clawHubService = new ClawHubService();
 
 /**
+ * Keep app data on a stable path so branding/name changes do not move
+ * provider keys, logs, or other persisted state.
+ */
+function configureStableUserDataPath(): void {
+  const stableUserDataPath = join(app.getPath('appData'), 'clawx');
+  app.setPath('userData', stableUserDataPath);
+}
+
+/**
  * Resolve the icons directory path (works in both dev and packaged mode)
  */
 function getIconsDir(): string {
@@ -105,9 +114,12 @@ function createWindow(): BrowserWindow {
  * Initialize the application
  */
 async function initialize(): Promise<void> {
-  // Set application display name (keeps package.json name for userData path)
+  // Set application display name
   app.setName('DanaClaw');
-  
+
+  // Decouple persisted data from display name changes.
+  configureStableUserDataPath();
+
   // Initialize logger first
   logger.init();
   logger.info('=== DanaClaw Application Starting ===');
