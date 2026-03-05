@@ -114,6 +114,63 @@ function isOpenRouterBaseUrl(baseUrl: string): boolean {
   }
 }
 
+function isLikely401AuthError(errorMessage: string): boolean {
+  const normalized = errorMessage.toLowerCase();
+  return (
+    normalized.includes('401') ||
+    normalized.includes('unauthorized')
+  );
+}
+
+async function buildOpenRouter401DiagnosticHint(errorMessage: string): Promise<string | null> {
+  if (!isLikely401AuthError(errorMessage)) {
+    return null;
+  }
+
+  try {
+    const defaultProviderId = await getDefaultProvider();
+    if (!defaultProviderId) {
+      return null;
+    }
+
+    const defaultProvider = await getProvider(defaultProviderId);
+    if (!defaultProvider) {
+      return null;
+    }
+
+    const targetsOpenRouter = defaultProvider.type === 'openrouter'
+      || (defaultProvider.baseUrl ? isOpenRouterBaseUrl(defaultProvider.baseUrl) : false);
+
+    if (!targetsOpenRouter) {
+      return null;
+    }
+
+    const apiKey = await getApiKey(defaultProviderId);
+    if (!apiKey?.trim()) {
+      logger.warn(
+        `[gateway:rpc] OpenRouter 401 diagnostic: missing API key for provider "${defaultProviderId}"`
+      );
+      return 'OpenRouter returned 401 and no API key is configured for the current provider. Please add a valid key in Settings > AI Providers.';
+    }
+
+    const keyValidation = await validateOpenRouterKey(defaultProvider.type, apiKey.trim());
+    if (!keyValidation.valid) {
+      logger.warn(
+        `[gateway:rpc] OpenRouter 401 diagnostic: direct key check failed for provider "${defaultProviderId}" (${keyValidation.error || 'unknown'})`
+      );
+      return 'OpenRouter returned 401 and direct API key validation failed. The key may be invalid or expired. Please configure a new key, or confirm the key is still valid.';
+    }
+
+    logger.info(
+      `[gateway:rpc] OpenRouter 401 diagnostic: direct key check passed for provider "${defaultProviderId}"`
+    );
+    return 'OpenRouter returned 401, but direct key validation passed. Please verify model permissions and provider routing settings.';
+  } catch (diagnosticError) {
+    logger.warn('[gateway:rpc] OpenRouter 401 diagnostic failed:', diagnosticError);
+    return null;
+  }
+}
+
 /**
  * Register all IPC handlers
  */
@@ -650,8 +707,15 @@ function registerGatewayHandlers(
       const result = await gatewayManager.rpc(method, params, timeoutMs);
       return { success: true, result };
     } catch (error) {
-      logger.error(`[gateway:rpc] ${method} failed: ${String(error)}`);
-      return { success: false, error: String(error) };
+      let errorMessage = String(error);
+      if (method === 'chat.send') {
+        const hint = await buildOpenRouter401DiagnosticHint(errorMessage);
+        if (hint) {
+          errorMessage = `${errorMessage}\n${hint}`;
+        }
+      }
+      logger.error(`[gateway:rpc] ${method} failed: ${errorMessage}`);
+      return { success: false, error: errorMessage };
     }
   });
 
@@ -733,8 +797,13 @@ function registerGatewayHandlers(
       logger.info(`[chat:sendWithMedia] RPC result: ${JSON.stringify(result)}`);
       return { success: true, result };
     } catch (error) {
-      logger.error(`[chat:sendWithMedia] Error: ${String(error)}`);
-      return { success: false, error: String(error) };
+      let errorMessage = String(error);
+      const hint = await buildOpenRouter401DiagnosticHint(errorMessage);
+      if (hint) {
+        errorMessage = `${errorMessage}\n${hint}`;
+      }
+      logger.error(`[chat:sendWithMedia] Error: ${errorMessage}`);
+      return { success: false, error: errorMessage };
     }
   });
 

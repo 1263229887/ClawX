@@ -109,4 +109,4 @@ export const DEFAULT_PROVIDER_CONFIG = {
 };
 
 /** Default API key for built-in provider */
-export const DEFAULT_PROVIDER_API_KEY = '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';
+export const DEFAULT_PROVIDER_API_KEY = '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';
