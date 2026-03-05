@@ -57,7 +57,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   tray = new Tray(icon);
   
   // Set tooltip
-  tray.setToolTip('Dana Claw - AI Assistant');
+  tray.setToolTip('DanaClaw - AI Assistant');
   
   const showWindow = () => {
     if (mainWindow.isDestroyed()) return;
@@ -68,7 +68,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   // Create context menu
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show Dana Claw',
+      label: 'Show DanaClaw',
       click: showWindow,
     },
     {
@@ -130,7 +130,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
       type: 'separator',
     },
     {
-      label: 'Quit Dana Claw',
+      label: 'Quit DanaClaw',
       click: () => {
         app.quit();
       },
@@ -165,7 +165,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
  */
 export function updateTrayStatus(status: string): void {
   if (tray) {
-    tray.setToolTip(`Dana Claw - ${status}`);
+    tray.setToolTip(`DanaClaw - ${status}`);
   }
 }
 

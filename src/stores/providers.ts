@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import type { ProviderConfig, ProviderWithKeyInfo } from '@/lib/providers';
+import { useChatStore } from '@/stores/chat';
 
 // Re-export types for consumers that imported from here
 export type { ProviderConfig, ProviderWithKeyInfo } from '@/lib/providers';
@@ -186,6 +187,14 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       }
       
       set({ defaultProviderId: providerId });
+
+      // Sessions can retain the model/provider they were created with.
+      // Start a fresh session after provider switch to avoid stale 401 loops.
+      try {
+        useChatStore.getState().newSession();
+      } catch (error) {
+        console.warn('Failed to rotate chat session after default provider change:', error);
+      }
     } catch (error) {
       console.error('Failed to set default provider:', error);
       throw error;

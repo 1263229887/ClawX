@@ -104,6 +104,16 @@ function resolveProviderApiProtocol(
   return registryApi;
 }
 
+function isOpenRouterBaseUrl(baseUrl: string): boolean {
+  const normalized = normalizeBaseUrl(baseUrl);
+  try {
+    const host = new URL(normalized).hostname.toLowerCase();
+    return host === 'openrouter.ai' || host.endsWith('.openrouter.ai');
+  } catch {
+    return normalized.toLowerCase().includes('openrouter.ai');
+  }
+}
+
 /**
  * Register all IPC handlers
  */
@@ -619,9 +629,28 @@ function registerGatewayHandlers(
   // Gateway RPC call
   ipcMain.handle('gateway:rpc', async (_, method: string, params?: unknown, timeoutMs?: number) => {
     try {
+      if (method === 'chat.send') {
+        try {
+          const defaultProviderId = await getDefaultProvider();
+          const defaultProvider = defaultProviderId
+            ? await getProvider(defaultProviderId)
+            : null;
+          const sessionKey = (
+            params && typeof params === 'object' && 'sessionKey' in params
+          )
+            ? String((params as { sessionKey?: unknown }).sessionKey ?? '')
+            : '';
+          logger.info(
+            `[gateway:rpc] chat.send sessionKey=${sessionKey || 'n/a'} defaultProvider=${defaultProviderId || 'none'} type=${defaultProvider?.type || 'n/a'} baseUrl=${defaultProvider?.baseUrl || 'n/a'} model=${defaultProvider?.model || 'n/a'}`
+          );
+        } catch (logErr) {
+          logger.warn('[gateway:rpc] failed to collect chat.send provider diagnostics:', logErr);
+        }
+      }
       const result = await gatewayManager.rpc(method, params, timeoutMs);
       return { success: true, result };
     } catch (error) {
+      logger.error(`[gateway:rpc] ${method} failed: ${String(error)}`);
       return { success: false, error: String(error) };
     }
   });
@@ -1650,6 +1679,15 @@ async function validateOpenAiCompatibleKey(
   const trimmedBaseUrl = baseUrl?.trim();
   if (!trimmedBaseUrl) {
     return { valid: false, error: `Base URL is required for provider "${providerType}" validation` };
+  }
+
+  // OpenRouter's /models endpoint is public and can return 200 without auth.
+  // Use /auth/key to avoid false-positive validation for custom OpenRouter configs.
+  if (isOpenRouterBaseUrl(trimmedBaseUrl)) {
+    console.log(
+      `[clawx-validate] ${providerType} detected openrouter base URL, using /auth/key probe`
+    );
+    return await validateOpenRouterKey(providerType, apiKey);
   }
 
   const headers = { Authorization: `Bearer ${apiKey}` };

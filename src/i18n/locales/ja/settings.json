@@ -18,7 +18,7 @@
     "notRequired": "不要",
     "empty": {
       "title": "プロバイダーが構成されていません",
-      "desc": "ClawX の使用を開始するには AI プロバイダーを追加してください",
+      "desc": "DanaClaw の使用を開始するには AI プロバイダーを追加してください",
       "cta": "最初のプロバイダーを追加"
     },
     "dialog": {
@@ -88,7 +88,7 @@
   },
   "updates": {
     "title": "アップデート",
-    "description": "ClawX を最新に保つ",
+    "description": "DanaClaw を最新に保つ",
     "autoCheck": "自動更新チェック",
     "autoCheckDesc": "起動時に更新を確認",
     "autoDownload": "自動アップデート",

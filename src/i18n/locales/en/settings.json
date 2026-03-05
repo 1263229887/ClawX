@@ -18,7 +18,7 @@
     "notRequired": "Not required",
     "empty": {
       "title": "No providers configured",
-      "desc": "Add an AI provider to start using ClawX",
+      "desc": "Add an AI provider to start using DanaClaw",
       "cta": "Add Your First Provider"
     },
     "dialog": {
@@ -88,7 +88,7 @@
   },
   "updates": {
     "title": "Updates",
-    "description": "Keep ClawX up to date",
+    "description": "Keep DanaClaw up to date",
     "autoCheck": "Auto-check for updates",
     "autoCheckDesc": "Check for updates on startup",
     "autoDownload": "Auto-update",

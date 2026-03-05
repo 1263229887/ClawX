@@ -58,7 +58,7 @@ const STEP = {
 const steps: SetupStep[] = [
   {
     id: 'welcome',
-    title: 'Welcome to ClawX',
+    title: 'Welcome to DanaClaw',
     description: 'Your AI assistant is ready to be configured',
   },
   {
@@ -84,7 +84,7 @@ const steps: SetupStep[] = [
   {
     id: 'complete',
     title: 'All Set!',
-    description: 'ClawX is ready to use',
+    description: 'DanaClaw is ready to use',
   },
 ];
 
@@ -104,7 +104,7 @@ const defaultSkills: DefaultSkill[] = [
 ];
 
 import { SETUP_PROVIDERS, type ProviderTypeInfo, getProviderIconUrl, shouldInvertInDark } from '@/lib/providers';
-import clawxIcon from '@/assets/logo.svg';
+import appLogo from '@/assets/logo.svg';
 
 // Use the shared provider registry for setup providers
 const providers = SETUP_PROVIDERS;
@@ -318,7 +318,7 @@ function WelcomeContent() {
   return (
     <div className="text-center space-y-4">
       <div className="mb-4 flex justify-center">
-        <img src={clawxIcon} alt="ClawX" className="h-16 w-16" />
+        <img src={appLogo} alt="DanaClaw" className="h-16 w-16" />
       </div>
       <h2 className="text-xl font-semibold">{t('welcome.title')}</h2>
       <p className="text-muted-foreground">

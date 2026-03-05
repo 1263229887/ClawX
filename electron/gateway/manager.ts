@@ -219,6 +219,107 @@ export class GatewayManager extends EventEmitter {
 
     return { level: 'warn', normalized: msg };
   }
+
+  private async getListeningPidsOnPort(port: number): Promise<number[]> {
+    try {
+      if (process.platform === 'win32') {
+        const output = await new Promise<string>((resolve) => {
+          import('child_process').then((cp) => {
+            const cmd = `cmd /c netstat -ano -p tcp | findstr LISTENING | findstr :${port}`;
+            cp.exec(cmd, { timeout: 5000 }, (err, stdout) => {
+              if (err) resolve('');
+              else resolve(stdout);
+            });
+          }).catch(() => resolve(''));
+        });
+
+        if (!output.trim()) return [];
+        const pids = output
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => {
+            const cols = line.split(/\s+/);
+            const last = cols[cols.length - 1];
+            const parsed = Number.parseInt(last, 10);
+            return Number.isFinite(parsed) ? parsed : NaN;
+          })
+          .filter((pid) => Number.isFinite(pid) && pid > 0);
+
+        return Array.from(new Set(pids));
+      }
+
+      const output = await new Promise<string>((resolve) => {
+        import('child_process').then((cp) => {
+          cp.exec(`lsof -i :${port} -sTCP:LISTEN -t`, { timeout: 5000 }, (err, stdout) => {
+            if (err) resolve('');
+            else resolve(stdout);
+          });
+        }).catch(() => resolve(''));
+      });
+
+      return output
+        .split(/\r?\n/)
+        .map((s) => Number.parseInt(s.trim(), 10))
+        .filter((pid) => Number.isFinite(pid) && pid > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  private async forceKillPid(pid: number): Promise<void> {
+    if (!Number.isFinite(pid) || pid <= 0) return;
+
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      // ignore
+    }
+
+    await new Promise((r) => setTimeout(r, 1200));
+
+    let stillAlive = false;
+    try {
+      process.kill(pid, 0);
+      stillAlive = true;
+    } catch {
+      stillAlive = false;
+    }
+
+    if (!stillAlive) return;
+
+    if (process.platform === 'win32') {
+      await new Promise<void>((resolve) => {
+        import('child_process').then((cp) => {
+          cp.exec(`taskkill /PID ${pid} /T /F`, { timeout: 5000 }, () => resolve());
+        }).catch(() => resolve());
+      });
+      return;
+    }
+
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // ignore
+    }
+  }
+
+  private async forceStopExternalGatewayByPort(port: number): Promise<void> {
+    const pids = await this.getListeningPidsOnPort(port);
+    if (pids.length === 0) return;
+
+    const ownPid = this.process?.pid;
+    const externalPids = pids.filter((pid) => !ownPid || pid !== ownPid);
+    if (externalPids.length === 0) return;
+
+    logger.warn(
+      `Force-stopping external Gateway listener(s) on port ${port}: ${externalPids.join(', ')}`
+    );
+
+    for (const pid of externalPids) {
+      await this.forceKillPid(pid);
+    }
+  }
   
   /**
    * Get current Gateway status
@@ -336,6 +437,11 @@ export class GatewayManager extends EventEmitter {
       } catch (error) {
         logger.warn('Failed to request shutdown for externally managed Gateway:', error);
       }
+
+      // Some external/legacy gateway processes don't support shutdown RPC.
+      // If they stay alive, provider/env updates never take effect and can
+      // manifest as persistent 401 errors after configuration changes.
+      await this.forceStopExternalGatewayByPort(this.status.port);
     }
 
     // Close WebSocket
@@ -582,40 +688,22 @@ export class GatewayManager extends EventEmitter {
       const port = PORTS.OPENCLAW_GATEWAY;
       
       try {
-        const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-          import('child_process').then(cp => {
-            cp.exec(`lsof -i :${port} -sTCP:LISTEN -t`, { timeout: 5000 }, (err, stdout) => {
-              if (err) resolve({ stdout: '' });
-              else resolve({ stdout });
-            });
-          }).catch(reject);
-        });
-        
-        if (stdout.trim()) {
-          const pids = stdout.trim().split('\n')
-            .map(s => s.trim())
-            .filter(Boolean);
-            
-          if (pids.length > 0) {
-            if (!this.process || !pids.includes(String(this.process.pid))) {
-               logger.info(`Found orphaned process listening on port ${port} (PIDs: ${pids.join(', ')}), attempting to kill...`);
+        const pids = await this.getListeningPidsOnPort(port);
+        if (pids.length > 0) {
+          const ownPid = this.process?.pid;
+          const externalPids = pids.filter((pid) => !ownPid || pid !== ownPid);
+          if (externalPids.length > 0) {
+            logger.info(`Found orphaned process listening on port ${port} (PIDs: ${externalPids.join(', ')}), attempting to kill...`);
 
-               // Unload the launchctl service first so macOS doesn't auto-
-               // respawn the process we're about to kill.
-               await this.unloadLaunchctlService();
+            // Unload the launchctl service first so macOS doesn't auto-
+            // respawn the process we're about to kill.
+            await this.unloadLaunchctlService();
 
-               // SIGTERM first so the gateway can clean up its lock file.
-               for (const pid of pids) {
-                 try { process.kill(parseInt(pid), 'SIGTERM'); } catch { /* ignore */ }
-               }
-               await new Promise(r => setTimeout(r, 3000));
-               // SIGKILL any survivors.
-               for (const pid of pids) {
-                 try { process.kill(parseInt(pid), 0); process.kill(parseInt(pid), 'SIGKILL'); } catch { /* already exited */ }
-               }
-               await new Promise(r => setTimeout(r, 1000));
-               return null;
+            for (const pid of externalPids) {
+              await this.forceKillPid(pid);
             }
+            await new Promise(r => setTimeout(r, 1000));
+            return null;
           }
         }
       } catch (err) {
@@ -1062,7 +1150,7 @@ export class GatewayManager extends EventEmitter {
             maxProtocol: 3,
             client: {
               id: clientId,
-              displayName: 'ClawX',
+              displayName: 'DanaClaw',
               version: '0.1.0',
               platform: process.platform,
               mode: clientMode,

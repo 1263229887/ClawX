@@ -11,9 +11,9 @@
             "sharp"
         ]
     },
-    "description": "Dana Claw - Graphical AI Assistant based on OpenClaw",
+    "description": "DanaClaw - Graphical AI Assistant based on OpenClaw",
     "main": "dist-electron/main/index.js",
-    "author": "Dana Claw Team",
+    "author": "DanaClaw Team",
     "license": "MIT",
     "private": true,
     "scripts": {

@@ -5,7 +5,13 @@
  */
 
 import type { ProviderType } from './provider-registry';
-import { getActiveOpenClawProviders } from './openclaw-auth';
+import {
+  getActiveOpenClawProviders,
+  saveProviderKeyToOpenClaw,
+  setOpenClawDefaultModel,
+  syncProviderConfigToOpenClaw,
+} from './openclaw-auth';
+import { getProviderConfig } from './provider-registry';
 
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -268,9 +274,9 @@ export async function getAllProvidersWithKeyInfo(): Promise<
 
 /** Default OpenRouter provider configuration */
 const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
-  id: 'openrouter-default',
+  id: 'openrouter',
   type: 'openrouter',
-  name: 'OpenRouter (Default)',
+  name: 'OpenRouter',
   baseUrl: 'https://openrouter.ai/api/v1',
   model: 'stepfun/step-3.5-flash:free',
   enabled: true,
@@ -280,7 +286,7 @@ const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
 };
 
 /** Default API key for built-in provider */
-const DEFAULT_PROVIDER_API_KEY = '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';
+const DEFAULT_PROVIDER_API_KEY = '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';
 
 /**
  * Initialize default provider on first launch
@@ -301,6 +307,29 @@ export async function initializeDefaultProvider(): Promise<void> {
 
     // Set as default
     await setDefaultProvider(DEFAULT_PROVIDER_CONFIG.id);
+
+    // Keep OpenClaw runtime config in sync on first launch so chat can work
+    // immediately without requiring a manual re-save in Settings.
+    try {
+      const meta = getProviderConfig(DEFAULT_PROVIDER_CONFIG.type);
+      if (meta) {
+        syncProviderConfigToOpenClaw(DEFAULT_PROVIDER_CONFIG.type, DEFAULT_PROVIDER_CONFIG.model, {
+          baseUrl: DEFAULT_PROVIDER_CONFIG.baseUrl || meta.baseUrl,
+          api: meta.api,
+          apiKeyEnv: meta.apiKeyEnv,
+          headers: meta.headers,
+        });
+      }
+      saveProviderKeyToOpenClaw(DEFAULT_PROVIDER_CONFIG.type, DEFAULT_PROVIDER_API_KEY);
+      if (DEFAULT_PROVIDER_CONFIG.model) {
+        setOpenClawDefaultModel(
+          DEFAULT_PROVIDER_CONFIG.type,
+          `${DEFAULT_PROVIDER_CONFIG.type}/${DEFAULT_PROVIDER_CONFIG.model}`
+        );
+      }
+    } catch (error) {
+      console.warn('[Provider] Failed to sync default provider into OpenClaw config:', error);
+    }
 
     console.log('[Provider] Default provider initialized:', DEFAULT_PROVIDER_CONFIG.id);
   }

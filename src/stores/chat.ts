@@ -126,6 +126,7 @@ let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
 // error (e.g. "terminated"), it may retry internally and recover. We wait
 // before committing the error to give the recovery path a chance.
 let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+let _lastDefaultProviderId: string | null = null;
 
 function clearErrorRecoveryTimer(): void {
   if (_errorRecoveryTimer) {
@@ -1283,6 +1284,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sendMessage: async (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => {
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
+
+    // Session model can be sticky. If default provider changed, rotate to a
+    // fresh session to ensure subsequent requests use the new provider/model.
+    try {
+      const currentDefaultProviderId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
+      const currentDefaultProvider = currentDefaultProviderId
+        ? await window.electron.ipcRenderer.invoke('provider:get', currentDefaultProviderId) as {
+          id?: string;
+          type?: string;
+          baseUrl?: string;
+          model?: string;
+        } | null
+        : null;
+      if (currentDefaultProviderId && _lastDefaultProviderId && currentDefaultProviderId !== _lastDefaultProviderId) {
+        console.log(
+          `[sendMessage] default provider changed (${_lastDefaultProviderId} -> ${currentDefaultProviderId}), creating new session`,
+        );
+        get().newSession();
+      }
+      if (currentDefaultProviderId) {
+        console.log(
+          `[sendMessage] using defaultProvider=${currentDefaultProviderId} type=${currentDefaultProvider?.type || 'unknown'} baseUrl=${currentDefaultProvider?.baseUrl || 'n/a'} model=${currentDefaultProvider?.model || 'n/a'}`,
+        );
+      }
+      if (currentDefaultProviderId) {
+        _lastDefaultProviderId = currentDefaultProviderId;
+      }
+    } catch (error) {
+      console.warn('[sendMessage] Failed to read default provider before send:', error);
+    }
 
     const { currentSessionKey } = get();
 

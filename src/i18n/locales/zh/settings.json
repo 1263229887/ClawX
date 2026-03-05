@@ -18,7 +18,7 @@
     "notRequired": "非必填",
     "empty": {
       "title": "未配置提供商",
-      "desc": "添加 AI 提供商以开始使用 ClawX",
+      "desc": "添加 AI 提供商以开始使用 DanaClaw",
       "cta": "添加您的第一个提供商"
     },
     "dialog": {
@@ -88,7 +88,7 @@
   },
   "updates": {
     "title": "更新",
-    "description": "保持 ClawX 最新",
+    "description": "保持 DanaClaw 最新",
     "autoCheck": "自动检查更新",
     "autoCheckDesc": "启动时检查更新",
     "autoDownload": "自动更新",
