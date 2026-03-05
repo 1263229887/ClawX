@@ -99,9 +99,9 @@ export function getProviderTypeInfo(type: ProviderType): ProviderTypeInfo | unde
 
 /** Default built-in provider configuration (first launch) */
 export const DEFAULT_PROVIDER_CONFIG = {
-  id: 'custom-dana-default',
-  type: 'custom' as const,
-  name: 'dana',
+  id: 'openrouter',
+  type: 'openrouter' as const,
+  name: 'OpenRouter',
   baseUrl: 'https://openrouter.ai/api/v1',
   model: 'stepfun/step-3.5-flash:free',
   enabled: true,
@@ -109,4 +109,4 @@ export const DEFAULT_PROVIDER_CONFIG = {
 };
 
 /** Default API key for built-in provider */
-export const DEFAULT_PROVIDER_API_KEY = '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';
+export const DEFAULT_PROVIDER_API_KEY = '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';

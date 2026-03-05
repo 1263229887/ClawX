@@ -20,6 +20,7 @@ import {
   ExternalLink,
   BookOpen,
   Copy,
+  Sparkles,
 } from 'lucide-react';
 import { TitleBar } from '@/components/layout/TitleBar';
 import { Button } from '@/components/ui/button';
@@ -713,6 +714,7 @@ function ProviderContent({
   const [keyValid, setKeyValid] = useState<boolean | null>(null);
   const [selectedProviderConfigId, setSelectedProviderConfigId] = useState<string | null>(null);
   const [defaultProviderType, setDefaultProviderType] = useState<string | null>(null);
+  const [defaultProviderBuiltIn, setDefaultProviderBuiltIn] = useState(false);
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
@@ -745,6 +747,7 @@ function ProviderContent({
         try {
           await window.electron.ipcRenderer.invoke('provider:setDefault', selectedProvider);
           setDefaultProviderType(selectedProvider);
+          setDefaultProviderBuiltIn(false);
         } catch (error) {
           console.error('Failed to set default provider:', error);
         }
@@ -802,7 +805,12 @@ function ProviderContent({
     let cancelled = false;
     (async () => {
       try {
-        const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
+        const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{
+          id: string;
+          type: string;
+          hasKey: boolean;
+          isBuiltIn?: boolean;
+        }>;
         const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
         const defaultProvider = defaultId ? list.find((p) => p.id === defaultId) : undefined;
         const setupProviderTypes = new Set<string>(providers.map((p) => p.id));
@@ -813,6 +821,7 @@ function ProviderContent({
           || setupCandidates[0];
         if (preferred && !cancelled) {
           setDefaultProviderType(defaultProvider?.type || null);
+          setDefaultProviderBuiltIn(Boolean(defaultProvider?.isBuiltIn));
           onSelectProvider(preferred.type);
           setSelectedProviderConfigId(preferred.id);
           const typeInfo = providers.find((p) => p.id === preferred.type);
@@ -823,6 +832,8 @@ function ProviderContent({
             onApiKeyChange(storedKey);
           }
         } else if (!cancelled) {
+          setDefaultProviderType(null);
+          setDefaultProviderBuiltIn(false);
           onConfiguredChange(false);
         }
       } catch (error) {
@@ -840,10 +851,16 @@ function ProviderContent({
     (async () => {
       if (!selectedProvider) return;
       try {
-        const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
+        const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{
+          id: string;
+          type: string;
+          hasKey: boolean;
+          isBuiltIn?: boolean;
+        }>;
         const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
         const defaultProvider = defaultId ? list.find((p) => p.id === defaultId) : undefined;
         setDefaultProviderType(defaultProvider?.type || null);
+        setDefaultProviderBuiltIn(Boolean(defaultProvider?.isBuiltIn));
         const sameType = list.filter((p) => p.type === selectedProvider);
         const preferredInstance =
           (defaultId && sameType.find((p) => p.id === defaultId))
@@ -908,6 +925,9 @@ function ProviderContent({
   const isOAuth = selectedProviderData?.isOAuth ?? false;
   const supportsApiKey = selectedProviderData?.supportsApiKey ?? false;
   const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
+  const defaultProviderBadgeLabel = defaultProviderBuiltIn
+    ? `${t('settings:aiProviders.card.default')} · ${t('settings:aiProviders.builtIn')}`
+    : t('settings:aiProviders.card.default');
 
   const handleValidateAndSave = async () => {
     if (!selectedProvider) return;
@@ -979,6 +999,7 @@ function ProviderContent({
 
       setSelectedProviderConfigId(providerIdForSave);
       setDefaultProviderType(selectedProvider);
+      setDefaultProviderBuiltIn(false);
       onConfiguredChange(true);
       toast.success(t('provider.valid'));
     } catch (error) {
@@ -1044,8 +1065,9 @@ function ProviderContent({
                   : t('provider.selectPlaceholder')}
               </span>
               {selectedProviderData && selectedProviderData.id === defaultProviderType && (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                  {t('settings:aiProviders.card.default')}
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 inline-flex items-center gap-1">
+                  <Sparkles className="h-2.5 w-2.5" />
+                  {defaultProviderBadgeLabel}
                 </Badge>
               )}
             </div>
@@ -1088,8 +1110,9 @@ function ProviderContent({
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {p.id === defaultProviderType && (
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                          {t('settings:aiProviders.card.default')}
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 inline-flex items-center gap-1">
+                          <Sparkles className="h-2.5 w-2.5" />
+                          {defaultProviderBadgeLabel}
                         </Badge>
                       )}
                       {isSelected && <Check className="h-4 w-4 text-primary shrink-0" />}

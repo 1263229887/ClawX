@@ -13,6 +13,7 @@ import {
   X,
   Loader2,
   Star,
+  Sparkles,
   Key,
   ExternalLink,
   Copy,
@@ -213,6 +214,9 @@ function ProviderCard({
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
   const canEditConfig = Boolean(typeInfo?.showBaseUrl || typeInfo?.showModelId);
+  const defaultBadgeText = provider.isBuiltIn
+    ? `${t('aiProviders.card.default')} · ${t('aiProviders.builtIn')}`
+    : t('aiProviders.card.default');
 
   useEffect(() => {
     if (isEditing) {
@@ -293,11 +297,12 @@ function ProviderCard({
               <div className="flex items-center gap-2">
                 <span className="font-semibold">{provider.name}</span>
                 {isDefault && (
-                  <Badge variant="default" className="text-xs">
-                    {t('aiProviders.card.default')}
+                  <Badge variant="default" className="text-xs inline-flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" />
+                    {defaultBadgeText}
                   </Badge>
                 )}
-                {provider.isBuiltIn && (
+                {provider.isBuiltIn && !isDefault && (
                   <Badge variant="outline" className="text-xs text-blue-500 border-blue-500/50">
                     {t('aiProviders.builtIn')}
                   </Badge>
@@ -410,7 +415,7 @@ function ProviderCard({
                 size="icon"
                 className="h-7 w-7"
                 onClick={isDefault ? undefined : onSetDefault}
-                title={isDefault ? t('aiProviders.card.default') : t('aiProviders.card.setDefault')}
+                title={isDefault ? defaultBadgeText : t('aiProviders.card.setDefault')}
                 disabled={isDefault}
               >
                 <Star
