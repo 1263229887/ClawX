@@ -289,21 +289,59 @@ const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
 };
 
 /** Default API key for built-in provider */
-const DEFAULT_PROVIDER_API_KEY = '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';
+const DEFAULT_PROVIDER_API_KEY = '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';
+const LEGACY_DEFAULT_PROVIDER_API_KEY = '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';
+
+async function syncDefaultProviderToOpenClaw(apiKey: string): Promise<void> {
+  try {
+    const meta = getProviderConfig(DEFAULT_PROVIDER_CONFIG.type);
+    if (meta) {
+      syncProviderConfigToOpenClaw(DEFAULT_PROVIDER_CONFIG.type, DEFAULT_PROVIDER_CONFIG.model, {
+        baseUrl: DEFAULT_PROVIDER_CONFIG.baseUrl || meta.baseUrl,
+        api: meta.api,
+        apiKeyEnv: meta.apiKeyEnv,
+        headers: meta.headers,
+      });
+    }
+    saveProviderKeyToOpenClaw(DEFAULT_PROVIDER_CONFIG.type, apiKey);
+    if (DEFAULT_PROVIDER_CONFIG.model) {
+      setOpenClawDefaultModel(
+        DEFAULT_PROVIDER_CONFIG.type,
+        `${DEFAULT_PROVIDER_CONFIG.type}/${DEFAULT_PROVIDER_CONFIG.model}`
+      );
+    }
+  } catch (error) {
+    console.warn('[Provider] Failed to sync default provider into OpenClaw config:', error);
+  }
+}
 
 /**
- * Initialize default provider on first launch
- * Creates the built-in provider if no providers exist
+ * Initialize bundled default provider.
+ * Auto-injects only when no API keys are configured yet.
  */
 export async function initializeDefaultProvider(): Promise<void> {
   const providers = await getAllProviders();
+  const storedKeyIds = await listStoredKeyIds();
+  const hasAnyStoredKey = storedKeyIds.length > 0;
 
-  // Only initialize if no providers exist
-  if (providers.length === 0) {
-    console.log('[Provider] First launch detected, initializing default provider');
+  // Bootstrap built-in provider only when user has no configured keys at all.
+  // This avoids overriding user-selected providers on later launches.
+  if (!hasAnyStoredKey) {
+    console.log('[Provider] No stored API keys detected, initializing default provider');
 
-    // Save the default provider config
-    await saveProvider(DEFAULT_PROVIDER_CONFIG);
+    const existingDefaultProvider = providers.find((provider) => provider.id === DEFAULT_PROVIDER_CONFIG.id);
+
+    // Save the default provider config if missing.
+    if (!existingDefaultProvider) {
+      await saveProvider(DEFAULT_PROVIDER_CONFIG);
+    } else if (!existingDefaultProvider.isBuiltIn) {
+      // Preserve existing metadata, but mark it as built-in for UI semantics.
+      await saveProvider({
+        ...existingDefaultProvider,
+        isBuiltIn: true,
+        updatedAt: new Date().toISOString(),
+      });
+    }
 
     // Store the API key
     await storeApiKey(DEFAULT_PROVIDER_CONFIG.id, DEFAULT_PROVIDER_API_KEY);
@@ -311,32 +349,27 @@ export async function initializeDefaultProvider(): Promise<void> {
     // Set as default
     await setDefaultProvider(DEFAULT_PROVIDER_CONFIG.id);
 
-    // Keep OpenClaw runtime config in sync on first launch so chat can work
-    // immediately without requiring a manual re-save in Settings.
-    try {
-      const meta = getProviderConfig(DEFAULT_PROVIDER_CONFIG.type);
-      if (meta) {
-        syncProviderConfigToOpenClaw(DEFAULT_PROVIDER_CONFIG.type, DEFAULT_PROVIDER_CONFIG.model, {
-          baseUrl: DEFAULT_PROVIDER_CONFIG.baseUrl || meta.baseUrl,
-          api: meta.api,
-          apiKeyEnv: meta.apiKeyEnv,
-          headers: meta.headers,
-        });
-      }
-      saveProviderKeyToOpenClaw(DEFAULT_PROVIDER_CONFIG.type, DEFAULT_PROVIDER_API_KEY);
-      if (DEFAULT_PROVIDER_CONFIG.model) {
-        setOpenClawDefaultModel(
-          DEFAULT_PROVIDER_CONFIG.type,
-          `${DEFAULT_PROVIDER_CONFIG.type}/${DEFAULT_PROVIDER_CONFIG.model}`
-        );
-      }
-    } catch (error) {
-      console.warn('[Provider] Failed to sync default provider into OpenClaw config:', error);
-    }
+    // Keep OpenClaw runtime config in sync so chat can work immediately.
+    await syncDefaultProviderToOpenClaw(DEFAULT_PROVIDER_API_KEY);
 
     console.log('[Provider] Default provider initialized:', DEFAULT_PROVIDER_CONFIG.id);
     return;
   }
 
+  // Migrate legacy built-in key to the latest bundled key without touching
+  // any user-defined keys.
+  const builtInDefaultProvider = providers.find((provider) => provider.id === DEFAULT_PROVIDER_CONFIG.id);
+  if (!builtInDefaultProvider || !builtInDefaultProvider.isBuiltIn) {
+    return;
+  }
+
+  const existingDefaultKey = await getApiKey(DEFAULT_PROVIDER_CONFIG.id);
+  if (existingDefaultKey !== LEGACY_DEFAULT_PROVIDER_API_KEY) {
+    return;
+  }
+
+  console.log('[Provider] Migrating legacy built-in default provider key');
+  await storeApiKey(DEFAULT_PROVIDER_CONFIG.id, DEFAULT_PROVIDER_API_KEY);
+  await syncDefaultProviderToOpenClaw(DEFAULT_PROVIDER_API_KEY);
 }
 
