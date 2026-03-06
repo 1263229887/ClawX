@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuthStore } from '@/stores/auth';
 import { useTranslation } from 'react-i18next';
-import logoPng from '@/assets/logo.png';
+import LogoSvg from '@/assets/svg/logo.svg';
 
 export function LoginModal() {
   const { t } = useTranslation('auth');
@@ -55,7 +55,7 @@ export function LoginModal() {
         <Card className="w-[400px] shadow-2xl">
           <CardHeader className="text-center pb-2">
             <div className="flex justify-center mb-4">
-              <img src={logoPng} alt="DanaClaw" className="h-16 w-16" />
+              <img src={LogoSvg} className="w-16 h-16 text-primary" />
             </div>
             <CardTitle className="text-2xl">{t('title')}</CardTitle>
             <CardDescription>{t('description')}</CardDescription>

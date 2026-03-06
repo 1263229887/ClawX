@@ -5,7 +5,7 @@
  */
 import { useState, useEffect } from 'react';
 import { Minus, Square, X, Copy } from 'lucide-react';
-import logoPng from '@/assets/logo.png';
+import LogoSvg from '@/assets/svg/logo.svg';
 
 const isMac = window.electron?.platform === 'darwin';
 const showEnvBadge = import.meta.env.MODE !== 'production';
@@ -49,7 +49,7 @@ function WindowsTitleBar() {
     <div className="drag-region flex h-10 shrink-0 items-center justify-between border-b bg-background">
       {/* Left: Icon + App Name */}
       <div className="no-drag flex items-center gap-2 pl-3">
-        <img src={logoPng} alt="DanaClaw" className="h-5 w-auto" />
+        <img src={LogoSvg} className="w-5 h-5 text-muted-foreground" />
         <span className="text-xs font-medium text-muted-foreground select-none">
           DanaClaw
         </span>
