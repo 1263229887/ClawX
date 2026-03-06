@@ -170,7 +170,7 @@ async function initialize(): Promise<void> {
   // Register update handlers
   registerUpdateHandlers(appUpdater, mainWindow);
 
-  // Initialize default provider on first launch
+  // Run provider bootstrap hook (setup requires explicit provider configuration)
   await initializeDefaultProvider();
 
   // Note: Auto-check for updates is driven by the renderer (update store init)

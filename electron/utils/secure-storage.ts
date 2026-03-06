@@ -7,11 +7,7 @@
 import type { ProviderType } from './provider-registry';
 import {
   getActiveOpenClawProviders,
-  saveProviderKeyToOpenClaw,
-  setOpenClawDefaultModel,
-  syncProviderConfigToOpenClaw,
 } from './openclaw-auth';
-import { getProviderConfig } from './provider-registry';
 
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -273,106 +269,13 @@ export async function getAllProvidersWithKeyInfo(): Promise<
   return results;
 }
 
-// ==================== Default Provider Initialization ====================
-
-/** Default built-in provider configuration for first launch */
-const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
-  id: 'openrouter',
-  type: 'openrouter',
-  name: 'OpenRouter',
-  baseUrl: 'https://openrouter.ai/api/v1',
-  model: 'stepfun/step-3.5-flash:free',
-  enabled: true,
-  isBuiltIn: true,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-};
-
-/** Default API key for built-in provider */
-const DEFAULT_PROVIDER_API_KEY = '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';
-const LEGACY_DEFAULT_PROVIDER_API_KEYS = [
-  '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',
-  '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',
-];
-
-async function syncDefaultProviderToOpenClaw(apiKey: string): Promise<void> {
-  try {
-    const meta = getProviderConfig(DEFAULT_PROVIDER_CONFIG.type);
-    if (meta) {
-      syncProviderConfigToOpenClaw(DEFAULT_PROVIDER_CONFIG.type, DEFAULT_PROVIDER_CONFIG.model, {
-        baseUrl: DEFAULT_PROVIDER_CONFIG.baseUrl || meta.baseUrl,
-        api: meta.api,
-        apiKeyEnv: meta.apiKeyEnv,
-        headers: meta.headers,
-      });
-    }
-    saveProviderKeyToOpenClaw(DEFAULT_PROVIDER_CONFIG.type, apiKey);
-    if (DEFAULT_PROVIDER_CONFIG.model) {
-      setOpenClawDefaultModel(
-        DEFAULT_PROVIDER_CONFIG.type,
-        `${DEFAULT_PROVIDER_CONFIG.type}/${DEFAULT_PROVIDER_CONFIG.model}`
-      );
-    }
-  } catch (error) {
-    console.warn('[Provider] Failed to sync default provider into OpenClaw config:', error);
-  }
-}
+// ==================== Provider Bootstrap ====================
 
 /**
- * Initialize bundled default provider.
- * Auto-injects only when no API keys are configured yet.
+ * Provider bootstrap hook at app startup.
+ * Intentionally no-op: setup flow should require explicit user configuration.
  */
 export async function initializeDefaultProvider(): Promise<void> {
-  const providers = await getAllProviders();
-  const storedKeyIds = await listStoredKeyIds();
-  const hasAnyStoredKey = storedKeyIds.length > 0;
-
-  // Bootstrap built-in provider only when user has no configured keys at all.
-  // This avoids overriding user-selected providers on later launches.
-  if (!hasAnyStoredKey) {
-    console.log('[Provider] No stored API keys detected, initializing default provider');
-
-    const existingDefaultProvider = providers.find((provider) => provider.id === DEFAULT_PROVIDER_CONFIG.id);
-
-    // Save the default provider config if missing.
-    if (!existingDefaultProvider) {
-      await saveProvider(DEFAULT_PROVIDER_CONFIG);
-    } else if (!existingDefaultProvider.isBuiltIn) {
-      // Preserve existing metadata, but mark it as built-in for UI semantics.
-      await saveProvider({
-        ...existingDefaultProvider,
-        isBuiltIn: true,
-        updatedAt: new Date().toISOString(),
-      });
-    }
-
-    // Store the API key
-    await storeApiKey(DEFAULT_PROVIDER_CONFIG.id, DEFAULT_PROVIDER_API_KEY);
-
-    // Set as default
-    await setDefaultProvider(DEFAULT_PROVIDER_CONFIG.id);
-
-    // Keep OpenClaw runtime config in sync so chat can work immediately.
-    await syncDefaultProviderToOpenClaw(DEFAULT_PROVIDER_API_KEY);
-
-    console.log('[Provider] Default provider initialized:', DEFAULT_PROVIDER_CONFIG.id);
-    return;
-  }
-
-  // Migrate legacy built-in key to the latest bundled key without touching
-  // any user-defined keys.
-  const builtInDefaultProvider = providers.find((provider) => provider.id === DEFAULT_PROVIDER_CONFIG.id);
-  if (!builtInDefaultProvider || !builtInDefaultProvider.isBuiltIn) {
-    return;
-  }
-
-  const existingDefaultKey = await getApiKey(DEFAULT_PROVIDER_CONFIG.id);
-  if (!existingDefaultKey || !LEGACY_DEFAULT_PROVIDER_API_KEYS.includes(existingDefaultKey)) {
-    return;
-  }
-
-  console.log('[Provider] Migrating legacy built-in default provider key');
-  await storeApiKey(DEFAULT_PROVIDER_CONFIG.id, DEFAULT_PROVIDER_API_KEY);
-  await syncDefaultProviderToOpenClaw(DEFAULT_PROVIDER_API_KEY);
+  return;
 }
 
