@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuthStore } from '@/stores/auth';
 import { useTranslation } from 'react-i18next';
-import LogoSvg from '@/assets/svg/logo.svg';
+import LogoSvg from '@/assets/logo.svg';
 
 export function LoginModal() {
   const { t } = useTranslation('auth');
