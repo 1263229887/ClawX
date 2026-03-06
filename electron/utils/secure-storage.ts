@@ -289,8 +289,11 @@ const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
 };
 
 /** Default API key for built-in provider */
-const DEFAULT_PROVIDER_API_KEY = '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';
-const LEGACY_DEFAULT_PROVIDER_API_KEY = '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';
+const DEFAULT_PROVIDER_API_KEY = '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';
+const LEGACY_DEFAULT_PROVIDER_API_KEYS = [
+  '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',
+  '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',
+];
 
 async function syncDefaultProviderToOpenClaw(apiKey: string): Promise<void> {
   try {
@@ -364,7 +367,7 @@ export async function initializeDefaultProvider(): Promise<void> {
   }
 
   const existingDefaultKey = await getApiKey(DEFAULT_PROVIDER_CONFIG.id);
-  if (existingDefaultKey !== LEGACY_DEFAULT_PROVIDER_API_KEY) {
+  if (!existingDefaultKey || !LEGACY_DEFAULT_PROVIDER_API_KEYS.includes(existingDefaultKey)) {
     return;
   }
 
