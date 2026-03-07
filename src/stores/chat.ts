@@ -1259,17 +1259,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
 
         // If pendingFinal, check whether the AI produced a final text response.
-        if (pendingFinal || get().pendingFinal) {
-          const recentAssistant = [...filteredMessages].reverse().find((msg) => {
-            if (msg.role !== 'assistant') return false;
-            if (!hasNonToolAssistantContent(msg)) return false;
-            return isAfterUserMsg(msg);
-          });
-          if (recentAssistant) {
-            clearHistoryPoll();
-            set({ sending: false, activeRunId: null, pendingFinal: false });
-          }
-        }
+        // Don't set sending: false here - let the final event from Gateway handle it
       } else {
         set({ messages: [], loading: false });
       }
