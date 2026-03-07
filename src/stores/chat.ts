@@ -1357,15 +1357,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     clearHistoryPoll();
     clearErrorRecoveryTimer();
 
-    const POLL_START_DELAY = 3_000;
-    const POLL_INTERVAL = 4_000;
+    const POLL_START_DELAY = 1_000;
+    const POLL_INTERVAL = 1_500;
     const pollHistory = () => {
       const state = get();
       if (!state.sending) { clearHistoryPoll(); return; }
-      if (state.streamingMessage) {
-        _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
-        return;
-      }
       state.loadHistory(true);
       _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
     };
