@@ -283,7 +283,7 @@ export class GatewayManager extends EventEmitter {
       process.kill(pid, 0);
       stillAlive = true;
     } catch {
-      stillAlive = false;
+      // process doesn't exist or no permission - stillAlive stays false
     }
 
     if (!stillAlive) return;
