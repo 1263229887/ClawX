@@ -148,6 +148,124 @@ export class GatewayManager extends EventEmitter {
     const message = error instanceof Error ? error.message : String(error);
     return /unknown method:\s*shutdown/i.test(message);
   }
+
+  private classifyStderrMessage(message: string): { level: 'drop' | 'debug' | 'warn'; normalized: string } {
+    const msg = message.trim();
+    if (!msg) return { level: 'drop', normalized: msg };
+
+    // Known noisy lines that are not actionable for Gateway lifecycle debugging.
+    if (msg.includes('openclaw-control-ui') && msg.includes('token_mismatch')) return { level: 'drop', normalized: msg };
+    if (msg.includes('closed before connect') && msg.includes('token mismatch')) return { level: 'drop', normalized: msg };
+
+    // Downgrade frequent non-fatal noise.
+    if (msg.includes('ExperimentalWarning')) return { level: 'debug', normalized: msg };
+    if (msg.includes('DeprecationWarning')) return { level: 'debug', normalized: msg };
+    if (msg.includes('Debugger attached')) return { level: 'debug', normalized: msg };
+
+    return { level: 'warn', normalized: msg };
+  }
+
+  private async getListeningPidsOnPort(port: number): Promise<number[]> {
+    try {
+      if (process.platform === 'win32') {
+        const output = await new Promise<string>((resolve) => {
+          import('child_process').then((cp) => {
+            const cmd = `cmd /c netstat -ano -p tcp | findstr LISTENING | findstr :${port}`;
+            cp.exec(cmd, { timeout: 5000 }, (err, stdout) => {
+              if (err) resolve('');
+              else resolve(stdout);
+            });
+          }).catch(() => resolve(''));
+        });
+
+        if (!output.trim()) return [];
+        const pids = output
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => {
+            const cols = line.split(/\s+/);
+            const last = cols[cols.length - 1];
+            const parsed = Number.parseInt(last, 10);
+            return Number.isFinite(parsed) ? parsed : NaN;
+          })
+          .filter((pid) => Number.isFinite(pid) && pid > 0);
+
+        return Array.from(new Set(pids));
+      }
+
+      const output = await new Promise<string>((resolve) => {
+        import('child_process').then((cp) => {
+          cp.exec(`lsof -i :${port} -sTCP:LISTEN -t`, { timeout: 5000 }, (err, stdout) => {
+            if (err) resolve('');
+            else resolve(stdout);
+          });
+        }).catch(() => resolve(''));
+      });
+
+      return output
+        .split(/\r?\n/)
+        .map((s) => Number.parseInt(s.trim(), 10))
+        .filter((pid) => Number.isFinite(pid) && pid > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  private async forceKillPid(pid: number): Promise<void> {
+    if (!Number.isFinite(pid) || pid <= 0) return;
+
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      // ignore
+    }
+
+    await new Promise((r) => setTimeout(r, 1200));
+
+    let stillAlive = false;
+    try {
+      process.kill(pid, 0);
+      stillAlive = true;
+    } catch {
+      // process doesn't exist or no permission - stillAlive stays false
+    }
+
+    if (!stillAlive) return;
+
+    if (process.platform === 'win32') {
+      await new Promise<void>((resolve) => {
+        import('child_process').then((cp) => {
+          cp.exec(`taskkill /PID ${pid} /T /F`, { timeout: 5000 }, () => resolve());
+        }).catch(() => resolve());
+      });
+      return;
+    }
+
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // ignore
+    }
+  }
+
+  private async forceStopExternalGatewayByPort(port: number): Promise<void> {
+    const pids = await this.getListeningPidsOnPort(port);
+    if (pids.length === 0) return;
+
+    const ownPid = this.process?.pid;
+    const externalPids = pids.filter((pid) => !ownPid || pid !== ownPid);
+    if (externalPids.length === 0) return;
+
+    logger.warn(
+      `Force-stopping external Gateway listener(s) on port ${port}: ${externalPids.join(', ')}`
+    );
+
+    for (const pid of externalPids) {
+      await this.forceKillPid(pid);
+    }
+  }
+  
   /**
    * Get current Gateway status
    */

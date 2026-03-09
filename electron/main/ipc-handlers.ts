@@ -1911,7 +1911,9 @@ function registerClawHubHandlers(clawHubService: ClawHubService): void {
   ipcMain.handle('clawhub:list', async () => {
     try {
       const results = await clawHubService.listInstalled();
-      return { success: true, results };
+      const localResults = await clawHubService.listLocalSkills();
+      const combined = [...results, ...localResults];
+      return { success: true, results: combined };
     } catch (error) {
       return { success: false, error: String(error) };
     }

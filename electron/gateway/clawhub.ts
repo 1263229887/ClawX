@@ -316,6 +316,50 @@ export class ClawHubService {
     }
 
     /**
+     * List skills from local directory (~/.openclaw/skills/local/)
+     */
+    async listLocalSkills(): Promise<Array<{ slug: string; version: string }>> {
+        try {
+            const localDir = path.join(this.workDir, 'skills', 'local');
+            if (!fs.existsSync(localDir)) {
+                return [];
+            }
+
+            const entries = fs.readdirSync(localDir, { withFileTypes: true });
+            const skills: Array<{ slug: string; version: string }> = [];
+
+            for (const entry of entries) {
+                if (!entry.isDirectory()) continue;
+                if (entry.name.startsWith('.')) continue;
+
+                const skillDir = path.join(localDir, entry.name);
+                const skillMdPath = path.join(skillDir, 'SKILL.md');
+
+                if (fs.existsSync(skillMdPath)) {
+                    try {
+                        const content = fs.readFileSync(skillMdPath, 'utf-8');
+                        const versionMatch = content.match(/^version:\s*(\S+)/m);
+                        skills.push({
+                            slug: entry.name,
+                            version: versionMatch ? versionMatch[1] : '1.0.0',
+                        });
+                    } catch {
+                        skills.push({
+                            slug: entry.name,
+                            version: '1.0.0',
+                        });
+                    }
+                }
+            }
+
+            return skills;
+        } catch (error) {
+            console.error('ClawHub listLocalSkills error:', error);
+            return [];
+        }
+    }
+
+    /**
      * Open skill README/manual in default editor
      */
     async openSkillReadme(slug: string): Promise<boolean> {
