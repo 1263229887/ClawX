@@ -68,7 +68,10 @@ export async function handleSkillRoutes(
 
   if (url.pathname === '/api/clawhub/list' && req.method === 'GET') {
     try {
-      sendJson(res, 200, { success: true, results: await ctx.clawHubService.listInstalled() });
+      const results = await ctx.clawHubService.listInstalled();
+      const localResults = await ctx.clawHubService.listLocalSkills();
+      const combined = [...results, ...localResults];
+      sendJson(res, 200, { success: true, results: combined });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
     }
