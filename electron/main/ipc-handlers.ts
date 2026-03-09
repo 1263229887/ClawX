@@ -2391,9 +2391,21 @@ function registerAuthHandlers(): void {
       // ?? API ??? code ?????code=200 ?????????
       const code = result.code as number | undefined;
       if (response.ok && (code === 200 || code === 0)) {
-        // Token ???? - ?????????????
+        // Token ???? - ????????????
         const token = 'pending-token-handling';
-        await saveAuthData(token, username);
+        const data = result.data as Record<string, unknown> | undefined;
+        const userInfo = {
+           id: String(data?.id || ''),
+           userName: username,
+           realname: String(data?.realname || data?.name || username),
+           loginAccount: username,
+           phone: String(data?.phone || ''),
+           email: String(data?.email || ''),
+           avatar: String(data?.avatar || ''),
+           tenantId: String(data?.tenantId || data?.tenant_id || ''),
+           relTenantIds: String(data?.relTenantIds || data?.rel_tenant_ids || ''),
+         };
+        await saveAuthData(token, userInfo);
 
         logger.info('[auth:login] Login successful for user:', username);
         return {

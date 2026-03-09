@@ -60,7 +60,7 @@ async function getAuthStore() {
  */
 export async function saveAuthData(
   token: string,
-  userInfo?: UserInfo,
+  userInfo: UserInfo,
   refreshToken?: RefreshToken,
   expiresAt?: number
 ): Promise<void> {
