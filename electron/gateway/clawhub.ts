@@ -94,7 +94,7 @@ export class ClawHubService {
                 FORCE_COLOR: '0',
             };
             if (this.useNodeRunner) {
-                env.ELECTRON_RUN_AS_NODE = '1';
+                Object.assign(env, { 'ELECTRON_RUN_AS_NODE': '1'})
             }
             const spawnCmd = useShell ? quoteForCmd(this.cliPath) : this.cliPath;
             const spawnArgs = useShell ? commandArgs.map(a => quoteForCmd(a)) : commandArgs;
